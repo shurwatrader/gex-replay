@@ -21,10 +21,10 @@
         <select id="dateSelect"></select>
       </label>
     </div>
-    <div class="stats">
-      <div class="stat"><span class="stat-label">PRICE</span><span id="statPrice" class="stat-val">—</span></div>
-      <div class="stat"><span class="stat-label">NET EXPOSURE</span><span id="statNet" class="stat-val">—</span></div>
-      <div class="stat"><span class="stat-label">CAPTURED</span><span id="statTime" class="stat-val">—</span></div>
+    <div class="clocks" id="clocks">
+      <div class="clock"><span class="tz" id="tzET">ET</span><span id="clkET" class="clk">—</span></div>
+      <div class="clock"><span class="tz" id="tzCT">CT</span><span id="clkCT" class="clk">—</span></div>
+      <div class="clock"><span class="tz" id="tzPT">PT</span><span id="clkPT" class="clk">—</span></div>
     </div>
   </header>
 
@@ -35,10 +35,13 @@
     <div id="empty" class="empty" hidden>No data loaded.</div>
   </main>
 
-  <section class="sparkline-wrap">
-    <div class="sparkline-label">NET EXPOSURE <span id="sparkNow"></span></div>
-    <svg id="sparkline" class="sparkline" preserveAspectRatio="none"></svg>
-  </section>
+  <div class="legend">
+    <span id="legMin" class="leg-val">—</span>
+    <div class="legend-bar"></div>
+    <span id="legZero" class="leg-val leg-zero">0</span>
+    <div class="legend-bar legend-bar-pos"></div>
+    <span id="legMax" class="leg-val">—</span>
+  </div>
 
   <footer class="controls">
     <div class="ctl-buttons">

@@ -1,6 +1,7 @@
 /* GEX Replay — interactive frame-by-frame heatmap player.
-   Rebuilds the heatmap grid live from each snapshot's JSON (every cell already
-   carries its own text + color), so the replay is fully interactive. */
+   The scraped per-cell colors are near-uniform, so we color each cell from its
+   numeric value using a diverging scale (purple = negative, teal/green/yellow =
+   positive), matching the source terminal's heatmap. */
 (() => {
   "use strict";
 
@@ -9,14 +10,12 @@
     title: $("title"),
     seriesSelect: $("seriesSelect"),
     dateSelect: $("dateSelect"),
-    statPrice: $("statPrice"),
-    statNet: $("statNet"),
-    statTime: $("statTime"),
+    clkET: $("clkET"), clkCT: $("clkCT"), clkPT: $("clkPT"),
+    tzET: $("tzET"), tzCT: $("tzCT"), tzPT: $("tzPT"),
     grid: $("grid"),
     gridScroll: $("gridScroll"),
     empty: $("empty"),
-    sparkline: $("sparkline"),
-    sparkNow: $("sparkNow"),
+    legMin: $("legMin"), legMax: $("legMax"),
     firstBtn: $("firstBtn"),
     prevBtn: $("prevBtn"),
     playBtn: $("playBtn"),
@@ -30,17 +29,20 @@
 
   const state = {
     manifest: null,
-    series: null,      // current series object from manifest
-    bundle: null,      // { slug, date, frames: [...] }
+    series: null,
+    bundle: null,
     frameIndex: 0,
     playing: false,
     timer: null,
-    cellEls: [],       // 2D array [row][col] of <td> for in-place updates
-    strikeEls: [],     // per-row strike <td>
-    priceRowTd: null,  // <td>s currently marked as the price row
-    moverKeys: new Set(),
+    cellEls: [],
+    strikeEls: [],
+    priceRowEl: null,
+    scaleMax: 1,       // color scale anchor (|value| percentile across the day)
+    logMax: Math.log1p(1),
+    expiries: [],
   };
 
+  // ---------- number parsing ----------
   const NUM_RE = /-?[\d,]*\.?\d+[KMB]?/g;
   function parseCellValue(text) {
     if (!text) return 0;
@@ -53,14 +55,88 @@
     return parseFloat(m[1]) * mult;
   }
 
-  function fmtMoney(v) {
+  function fmtCompact(v) {
     if (v == null || isNaN(v)) return "—";
     const sign = v < 0 ? "-" : "";
     const a = Math.abs(v);
-    if (a >= 1e9) return `${sign}$${(a / 1e9).toFixed(2)}B`;
-    if (a >= 1e6) return `${sign}$${(a / 1e6).toFixed(1)}M`;
-    if (a >= 1e3) return `${sign}$${(a / 1e3).toFixed(1)}K`;
-    return `${sign}$${a.toFixed(0)}`;
+    if (a >= 1e9) return `${sign}${(a / 1e9).toFixed(2)}B`;
+    if (a >= 1e6) return `${sign}${(a / 1e6).toFixed(1)}M`;
+    if (a >= 1e3) return `${sign}${(a / 1e3).toFixed(1)}K`;
+    return `${sign}${a.toFixed(0)}`;
+  }
+
+  // ---------- diverging color scale ----------
+  // stops keyed on t in [-1, 1]
+  const STOPS = [
+    [-1.0, 150, 60, 170],
+    [-0.5, 70, 90, 180],
+    [0.0, 28, 45, 60],
+    [0.5, 38, 152, 134],
+    [1.0, 245, 215, 60],
+  ];
+  function colorFor(value) {
+    if (!value) return "rgb(24, 30, 38)"; // zero / empty → near-background
+    // signed-log: values span ~5 orders of magnitude (K walls up to hundreds of
+    // M), so a linear scale would crush everything but the walls to the center
+    // color. Log keeps mid-range cells visibly separated.
+    let t = Math.sign(value) * Math.log1p(Math.abs(value)) / state.logMax;
+    t = Math.max(-1, Math.min(1, t));
+    for (let i = 0; i < STOPS.length - 1; i++) {
+      const [t0, r0, g0, b0] = STOPS[i];
+      const [t1, r1, g1, b1] = STOPS[i + 1];
+      if (t >= t0 && t <= t1) {
+        const f = (t - t0) / (t1 - t0);
+        return `rgb(${Math.round(r0 + (r1 - r0) * f)},${Math.round(g0 + (g1 - g0) * f)},${Math.round(b0 + (b1 - b0) * f)})`;
+      }
+    }
+    return "rgb(24, 30, 38)";
+  }
+
+  // Robust scale max: ~98th percentile of |value| across the whole day, so a
+  // single outlier doesn't wash out the gradient and colors are stable across
+  // frames (no flicker during playback).
+  function computeScale(frames) {
+    const mags = [];
+    frames.forEach((f) => (f.rows || []).forEach((row) =>
+      (row.values || []).forEach((c) => {
+        const v = Math.abs(parseCellValue(c.text));
+        if (v > 0) mags.push(v);
+      })));
+    if (!mags.length) return 1;
+    mags.sort((a, b) => a - b);
+    const p = mags[Math.floor(mags.length * 0.98)] || mags[mags.length - 1];
+    return p || 1;
+  }
+
+  // ---------- timezone clocks ----------
+  const TZ = {
+    ET: "America/New_York",
+    CT: "America/Chicago",
+    PT: "America/Los_Angeles",
+  };
+  function zoneParts(date, tz) {
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false, timeZoneName: "short",
+    });
+    const parts = fmt.formatToParts(date);
+    const get = (t) => (parts.find((p) => p.type === t) || {}).value || "";
+    let hh = get("hour"); if (hh === "24") hh = "00";
+    const time = `${hh}:${get("minute")}:${get("second")}`;
+    return { time, abbr: get("timeZoneName") };
+  }
+  function updateClocks(capturedAt) {
+    const d = capturedAt ? new Date(capturedAt) : null;
+    if (!d || isNaN(d)) {
+      els.clkET.textContent = els.clkCT.textContent = els.clkPT.textContent = "—";
+      return;
+    }
+    [["ET", els.clkET, els.tzET], ["CT", els.clkCT, els.tzCT], ["PT", els.clkPT, els.tzPT]]
+      .forEach(([k, clkEl, tzEl]) => {
+        const { time, abbr } = zoneParts(d, TZ[k]);
+        clkEl.textContent = time;
+        tzEl.textContent = abbr || k;
+      });
   }
 
   // ---------- data loading ----------
@@ -75,9 +151,7 @@
     }
     const series = state.manifest.series || [];
     if (!series.length) { showEmpty("Manifest has no series yet. Run scripts/build_manifest.py."); return; }
-
-    els.seriesSelect.innerHTML = series
-      .map((s, i) => `<option value="${i}">${s.title}</option>`).join("");
+    els.seriesSelect.innerHTML = series.map((s, i) => `<option value="${i}">${s.title}</option>`).join("");
     els.seriesSelect.onchange = () => selectSeries(+els.seriesSelect.value);
     selectSeries(0);
   }
@@ -86,10 +160,8 @@
     state.series = state.manifest.series[i];
     els.title.textContent = state.series.title;
     const dates = state.series.dates || [];
-    els.dateSelect.innerHTML = dates
-      .map((d, j) => `<option value="${j}">${d.date} · ${d.frames} frames</option>`).join("");
+    els.dateSelect.innerHTML = dates.map((d, j) => `<option value="${j}">${d.date} · ${d.frames} frames</option>`).join("");
     els.dateSelect.onchange = () => selectDate(+els.dateSelect.value);
-    // default to the most recent date
     els.dateSelect.value = String(dates.length - 1);
     selectDate(dates.length - 1);
   }
@@ -106,11 +178,14 @@
       return;
     }
     els.empty.hidden = true;
+    state.scaleMax = computeScale(state.bundle.frames);
+    state.logMax = Math.log1p(state.scaleMax);
+    els.legMin.textContent = "-" + fmtCompact(state.scaleMax);
+    els.legMax.textContent = "+" + fmtCompact(state.scaleMax);
     buildGrid(state.bundle.frames);
     els.scrubber.max = String(Math.max(0, state.bundle.frames.length - 1));
     state.frameIndex = 0;
     els.scrubber.value = "0";
-    drawSparkline();
     showFrame(0);
   }
 
@@ -125,8 +200,8 @@
     if (!frames.length) { showEmpty("This day has no frames."); return; }
     const expiries = frames[0].expiries || [];
     const rows = frames[0].rows || [];
+    state.expiries = expiries;
 
-    // Header
     const thead = document.createElement("thead");
     const htr = document.createElement("tr");
     const strikeHead = document.createElement("th");
@@ -140,24 +215,21 @@
     });
     thead.appendChild(htr);
 
-    // Body — build cells once, update contents per frame.
     const tbody = document.createElement("tbody");
     state.cellEls = [];
     state.strikeEls = [];
-    rows.forEach((row, r) => {
+    rows.forEach((row) => {
       const tr = document.createElement("tr");
-      tr.dataset.strike = row.strike;
       const stTd = document.createElement("td");
       stTd.className = "strike-col";
-      stTd.textContent = formatStrike(row.strike);
+      stTd.textContent = fmtStrike(row.strike);
       tr.appendChild(stTd);
       state.strikeEls.push(stTd);
 
       const rowCells = [];
-      (row.values || []).forEach((_, c) => {
+      (row.values || []).forEach(() => {
         const td = document.createElement("td");
         td.className = "cell";
-        td.title = `${expiries[c] || ""} · ${formatStrike(row.strike)}`;
         tr.appendChild(td);
         rowCells.push(td);
       });
@@ -170,33 +242,24 @@
     els.grid.appendChild(tbody);
   }
 
-  function formatStrike(s) {
-    return Number.isInteger(s) ? String(s) : String(s);
-  }
+  function fmtStrike(s) { return Number.isInteger(s) ? String(s) : String(s); }
 
-  // ---------- movers ----------
+  // ---------- movers (biggest change vs previous frame) ----------
   function computeMovers(frame, prevFrame, count = 6) {
     const keys = new Set();
     if (!prevFrame) return keys;
     const prev = new Map();
-    (prevFrame.rows || []).forEach((row) => {
-      (row.values || []).forEach((cell, c) => {
-        prev.set(row.strike + "|" + c, parseCellValue(cell.text));
-      });
-    });
+    (prevFrame.rows || []).forEach((row) => (row.values || []).forEach((cell, c) =>
+      prev.set(row.strike + "|" + c, parseCellValue(cell.text))));
     const deltas = [];
-    (frame.rows || []).forEach((row) => {
-      (row.values || []).forEach((cell, c) => {
-        const key = row.strike + "|" + c;
-        if (!prev.has(key)) return;
-        const d = Math.abs(parseCellValue(cell.text) - prev.get(key));
-        if (d > 0) deltas.push([d, row, c]);
-      });
-    });
+    (frame.rows || []).forEach((row) => (row.values || []).forEach((cell, c) => {
+      const key = row.strike + "|" + c;
+      if (!prev.has(key)) return;
+      const d = Math.abs(parseCellValue(cell.text) - prev.get(key));
+      if (d > 0) deltas.push([d, key]);
+    }));
     deltas.sort((a, b) => b[0] - a[0]);
-    for (let i = 0; i < Math.min(count, deltas.length); i++) {
-      deltas[i] && keys.add(deltas[i][1].strike + "|" + deltas[i][2]);
-    }
+    for (let i = 0; i < Math.min(count, deltas.length); i++) keys.add(deltas[i][1]);
     return keys;
   }
 
@@ -208,8 +271,12 @@
     state.frameIndex = idx;
     const frame = frames[idx];
     const prevFrame = idx > 0 ? frames[idx - 1] : null;
-
     const movers = els.moversToggle.checked ? computeMovers(frame, prevFrame) : new Set();
+
+    // prev-frame lookup for per-cell delta tooltips
+    const prevMap = new Map();
+    if (prevFrame) (prevFrame.rows || []).forEach((row) => (row.values || []).forEach((cell, c) =>
+      prevMap.set(row.strike + "|" + c, parseCellValue(cell.text))));
 
     (frame.rows || []).forEach((row, r) => {
       const rowCells = state.cellEls[r];
@@ -217,41 +284,37 @@
       (row.values || []).forEach((cell, c) => {
         const td = rowCells[c];
         if (!td) return;
-        td.textContent = cell.text ?? "";
-        td.style.background = cell.color || "transparent";
-        const isMover = movers.has(row.strike + "|" + c);
-        td.classList.toggle("mover", isMover);
+        const text = cell.text ?? "";
+        const val = parseCellValue(text);
+        td.textContent = text;
+        td.style.background = colorFor(val);
+        td.classList.toggle("zero", !val);
+        td.classList.toggle("mover", movers.has(row.strike + "|" + c));
+        // hover: value + delta vs previous frame
+        const key = row.strike + "|" + c;
+        let tip = `${state.expiries[c] || ""} · ${fmtStrike(row.strike)}\n${text || "0"}`;
+        if (prevMap.has(key)) {
+          const d = val - prevMap.get(key);
+          tip += `\nΔ ${d >= 0 ? "+" : ""}${fmtCompact(d)} vs prev`;
+        }
+        td.title = tip;
       });
     });
 
     markPriceRow(frame);
-
-    // stats
-    els.statPrice.textContent = frame.price != null ? frame.price.toFixed(2) : "—";
-    els.statNet.textContent = frame.netExposure || fmtMoney(frame.netExposureValue);
-    els.statNet.classList.toggle("neg", (frame.netExposureValue ?? 0) < 0);
-    els.statNet.classList.toggle("pos", (frame.netExposureValue ?? 0) > 0);
-    els.statTime.textContent = frame.ts || "—";
-
+    updateClocks(frame.capturedAt);
     els.scrubber.value = String(idx);
-    els.frameLabel.textContent = `${idx + 1} / ${frames.length}  ·  ${frame.ts || ""}`;
-    els.sparkNow.textContent = fmtMoney(frame.netExposureValue);
-    updateSparkCursor(idx);
+    els.frameLabel.textContent = `${idx + 1} / ${frames.length}`;
   }
 
   function markPriceRow(frame) {
-    // clear old marker
     if (state.priceRowEl) {
       state.priceRowEl.classList.remove("price-row");
-      const td = state.priceRowEl.querySelector("td.strike-col");
-      if (td) td.removeAttribute("data-price");
       state.priceRowEl = null;
     }
     if (frame.price == null) return;
-    const rows = frame.rows || [];
-    // find the row whose strike is closest to the current price
     let bestR = -1, bestD = Infinity;
-    rows.forEach((row, r) => {
+    (frame.rows || []).forEach((row, r) => {
       const d = Math.abs(row.strike - frame.price);
       if (d < bestD) { bestD = d; bestR = r; }
     });
@@ -259,61 +322,11 @@
     const tr = state.strikeEls[bestR] && state.strikeEls[bestR].parentElement;
     if (!tr) return;
     tr.classList.add("price-row");
-    state.strikeEls[bestR].setAttribute("data-price", frame.price.toFixed(2));
     state.priceRowEl = tr;
   }
 
-  // ---------- sparkline ----------
-  function drawSparkline() {
-    const svg = els.sparkline;
-    svg.innerHTML = "";
-    const frames = state.bundle.frames || [];
-    const pts = frames.map((f, i) => [i, f.netExposureValue]).filter((p) => p[1] != null);
-    if (pts.length < 2) return;
-
-    const W = 1000, H = 100, padY = 10;
-    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    const xs = frames.length - 1;
-    const vals = pts.map((p) => p[1]);
-    let vmin = Math.min(...vals), vmax = Math.max(...vals);
-    if (vmin === vmax) { vmin -= 1; vmax += 1; }
-    const span = vmax - vmin;
-    const X = (i) => (i / xs) * W;
-    const Y = (v) => H - padY - ((v - vmin) / span) * (H - 2 * padY);
-
-    // zero line
-    if (vmin < 0 && vmax > 0) {
-      const zy = Y(0);
-      addSvg("line", { x1: 0, y1: zy, x2: W, y2: zy, stroke: "#3a4049", "stroke-width": 1 });
-    }
-    // area + line
-    const line = pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ");
-    const area = `0,${H} ` + line + ` ${W},${H}`;
-    addSvg("polyline", { points: area, fill: "rgba(0,200,210,0.12)", stroke: "none" });
-    addSvg("polyline", { points: line, fill: "none", stroke: "#00c8d2", "stroke-width": 2 });
-
-    // cursor (updated separately)
-    const cursor = addSvg("line", { x1: 0, y1: 0, x2: 0, y2: H, stroke: "#ffd600", "stroke-width": 1.5, id: "sparkCursor" });
-    state._sparkX = X;
-    state._sparkCursor = cursor;
-  }
-
-  function updateSparkCursor(idx) {
-    if (!state._sparkCursor || !state._sparkX) return;
-    const x = state._sparkX(idx);
-    state._sparkCursor.setAttribute("x1", x);
-    state._sparkCursor.setAttribute("x2", x);
-  }
-
-  function addSvg(tag, attrs) {
-    const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
-    for (const k in attrs) el.setAttribute(k, attrs[k]);
-    els.sparkline.appendChild(el);
-    return el;
-  }
-
   // ---------- playback ----------
-  function fps() { return 2 * parseFloat(els.speedSelect.value); } // base 2fps × speed
+  function fps() { return 2 * parseFloat(els.speedSelect.value); }
   function play() {
     if (!state.bundle || state.bundle.frames.length < 2) return;
     state.playing = true;
@@ -326,7 +339,7 @@
     state.timer = setTimeout(() => {
       if (!state.playing) return;
       let next = state.frameIndex + 1;
-      if (next >= state.bundle.frames.length) next = 0; // loop
+      if (next >= state.bundle.frames.length) next = 0;
       showFrame(next);
       scheduleTick();
     }, 1000 / fps());
