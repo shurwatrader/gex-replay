@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GEX Replay</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span id="title">GEX Replay</span>
+    </div>
+    <div class="topbar-selects">
+      <label>Series
+        <select id="seriesSelect"></select>
+      </label>
+      <label>Date
+        <select id="dateSelect"></select>
+      </label>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="stat-label">PRICE</span><span id="statPrice" class="stat-val">—</span></div>
+      <div class="stat"><span class="stat-label">NET EXPOSURE</span><span id="statNet" class="stat-val">—</span></div>
+      <div class="stat"><span class="stat-label">CAPTURED</span><span id="statTime" class="stat-val">—</span></div>
+    </div>
+  </header>
+
+  <main class="grid-wrap">
+    <div id="gridScroll" class="grid-scroll">
+      <table id="grid" class="grid"></table>
+    </div>
+    <div id="empty" class="empty" hidden>No data loaded.</div>
+  </main>
+
+  <section class="sparkline-wrap">
+    <div class="sparkline-label">NET EXPOSURE <span id="sparkNow"></span></div>
+    <svg id="sparkline" class="sparkline" preserveAspectRatio="none"></svg>
+  </section>
+
+  <footer class="controls">
+    <div class="ctl-buttons">
+      <button id="firstBtn" title="First frame (Home)">⏮</button>
+      <button id="prevBtn" title="Previous frame (←)">◀</button>
+      <button id="playBtn" class="play" title="Play / Pause (Space)">▶</button>
+      <button id="nextBtn" title="Next frame (→)">▶</button>
+      <button id="lastBtn" title="Last frame (End)">⏭</button>
+    </div>
+    <input id="scrubber" class="scrubber" type="range" min="0" max="0" value="0" step="1" />
+    <div class="ctl-right">
+      <span id="frameLabel" class="frame-label">— / —</span>
+      <label class="speed">Speed
+        <select id="speedSelect">
+          <option value="0.5">0.5×</option>
+          <option value="1">1×</option>
+          <option value="2" selected>2×</option>
+          <option value="4">4×</option>
+          <option value="8">8×</option>
+        </select>
+      </label>
+      <label class="movers-toggle" title="Outline the biggest changes since the previous frame">
+        <input id="moversToggle" type="checkbox" checked /> Movers
+      </label>
+    </div>
+  </footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

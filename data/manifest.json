@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-07-02T22:40:58.517981+00:00",
+  "series": [
+    {
+      "slug": "SPY_GEXOI_700_800",
+      "symbol": "SPY",
+      "title": "SPY \u2014 GEX OI (700-800)",
+      "dates": [
+        {
+          "date": "2026-07-02",
+          "frames": 8,
+          "file": "data/SPY_GEXOI_700_800/2026-07-02.json"
+        }
+      ]
+    }
+  ]
+}
