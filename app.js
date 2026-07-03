@@ -224,16 +224,23 @@
     strikeHead.className = "strike-col strike-head";
     strikeHead.textContent = "STRIKE";
     htr.appendChild(strikeHead);
+    const wallHead = document.createElement("th");
+    wallHead.className = "wall-col";
+    wallHead.textContent = "WALL";
+    htr.appendChild(wallHead);
+    state.headerEls = [];
     state.expiries.forEach((e) => {
       const th = document.createElement("th");
       th.textContent = e;
       htr.appendChild(th);
+      state.headerEls.push(th);
     });
     thead.appendChild(htr);
 
     const tbody = document.createElement("tbody");
     state.cellEls = [];
     state.strikeEls = [];
+    state.wallColEls = [];
     state.rowEls = [];
     state.strikes.forEach((strike) => {
       const tr = document.createElement("tr");
@@ -244,15 +251,22 @@
       state.strikeEls.push(stTd);
       state.rowEls.push(tr);
 
+      // wall-alert gutter — badges live here, not on top of the data cells
+      const wallTd = document.createElement("td");
+      wallTd.className = "wall-col";
+      const wallPill = document.createElement("span");
+      wallPill.className = "wall"; wallPill.hidden = true;
+      wallTd.appendChild(wallPill);
+      tr.appendChild(wallTd);
+      state.wallColEls.push({ td: wallTd, pill: wallPill });
+
       const rowCells = [];
       state.expiries.forEach(() => {
         const td = document.createElement("td");
         td.className = "cell";
-        // flex layout inside the cell: [wall pill][stars][delta chip] ... [value]
+        // flex layout inside the cell: [stars][delta chip] ......... [value]
         const cw = document.createElement("div");
         cw.className = "cw";
-        const wall = document.createElement("span");
-        wall.className = "wall"; wall.hidden = true;
         const starOi = document.createElement("span");
         starOi.className = "star oi"; starOi.textContent = "★"; starOi.hidden = true;
         const starVol = document.createElement("span");
@@ -261,10 +275,10 @@
         delta.className = "delta"; delta.hidden = true;
         const val = document.createElement("span");
         val.className = "val";
-        cw.append(wall, starOi, starVol, delta, val);
+        cw.append(starOi, starVol, delta, val);
         td.appendChild(cw);
         tr.appendChild(td);
-        rowCells.push({ td, wall, starOi, starVol, delta, val });
+        rowCells.push({ td, starOi, starVol, delta, val });
       });
       state.cellEls.push(rowCells);
       tbody.appendChild(tr);
@@ -327,22 +341,32 @@
       deltas.slice(0, 6).forEach(([, key, d]) => moverMap.set(key, d));
     }
 
+    // Drop expiry columns that aren't on the board in this frame (e.g. already
+    // expired) instead of showing a blank column.
+    const present = new Set(frame.expiries || []);
+    state.expiries.forEach((exp, c) => {
+      const show = present.has(exp) ? "" : "none";
+      state.headerEls[c].style.display = show;
+      state.cellEls.forEach((rowCells) => { rowCells[c].td.style.display = show; });
+    });
+
     // Row totals for call/put wall detection.
     const rowSum = new Map();
+    const price = frame.price != null ? Number(frame.price) : null;
 
     state.strikes.forEach((strike, r) => {
+      const rowWalls = [];
       state.expiries.forEach((exp, c) => {
         const key = strike + "|" + exp;
         const el = state.cellEls[r][c];
         const p = cur.get(key);
 
         if (!p) {
-          // expiry not present in this frame (e.g. already expired)
           el.td.className = "cell absent";
           el.td.style.background = "";
           el.td.style.color = "";
           el.val.textContent = "";
-          el.wall.hidden = el.starOi.hidden = el.starVol.hidden = el.delta.hidden = true;
+          el.starOi.hidden = el.starVol.hidden = el.delta.hidden = true;
           el.td.title = "";
           delete el.td.dataset.dir;
           return;
@@ -355,13 +379,13 @@
         el.td.style.background = bg;
         el.td.style.color = fg;
 
-        // wall-alert badge
-        const wallText = [p.wallOI, p.wallPct].filter(Boolean).join(" ");
-        el.wall.hidden = !wallText;
-        if (wallText) el.wall.textContent = wallText;
+        const raw = frameCell(frame, strike, exp);
+        if (p.wallOI || p.wallPct) {
+          rowWalls.push({ exp, wallOI: p.wallOI, wallPct: p.wallPct,
+                          wallType: raw && raw.wallType });
+        }
 
         // king stars
-        const raw = frameCell(frame, strike, exp);
         el.starOi.hidden = !(raw && raw.oiKing);
         el.starVol.hidden = !(raw && raw.volKing);
 
@@ -385,11 +409,31 @@
           const dd = p.num - pp.num;
           tip += `\nΔ ${dd >= 0 ? "+" : ""}${fmtCompact(dd)} vs prev`;
         }
-        if (wallText) tip += `\nWall: ${wallText}`;
         if (raw && raw.oiKing) tip += `\n★ GEX OI king`;
         if (raw && raw.volKing) tip += `\n★ GEX Vol king`;
         el.td.title = tip;
       });
+
+      // wall-alert gutter for this strike
+      const g = state.wallColEls[r];
+      if (rowWalls.length) {
+        const w = rowWalls[0];
+        g.pill.hidden = false;
+        g.pill.textContent = [w.wallOI, w.wallPct].filter(Boolean).join(" ");
+        // side: scraper's wallType when available, else derived from spot
+        g.td.title = rowWalls.map((x) => {
+          let side = x.wallType
+            ? String(x.wallType).replace(/[-_]/g, " ")
+            : (price != null ? (strike >= price ? "call top volume" : "put top volume") : "top volume");
+          return `${side} — ${[x.wallOI, x.wallPct].filter(Boolean).join(" ")} (${x.exp})`;
+        }).join("\n");
+        g.td.classList.toggle("side-call", price != null && strike >= price);
+        g.td.classList.toggle("side-put", price != null && strike < price);
+      } else {
+        g.pill.hidden = true;
+        g.td.title = "";
+        g.td.classList.remove("side-call", "side-put");
+      }
     });
 
     markPriceRow(frame);
@@ -410,8 +454,8 @@
   function markPriceRow(frame) {
     if (state.priceRowEl) {
       state.priceRowEl.classList.remove("price-row");
-      const st = state.priceRowEl.querySelector("td.strike-col");
-      if (st) delete st.dataset.spot;
+      const wc = state.priceRowEl.querySelector("td.wall-col");
+      if (wc) delete wc.dataset.spot;
       state.priceRowEl = null;
     }
     if (frame.price == null) return;
@@ -423,7 +467,7 @@
     if (bestR < 0) return;
     const tr = state.rowEls[bestR];
     tr.classList.add("price-row");
-    state.strikeEls[bestR].dataset.spot = "$" + Number(frame.price).toFixed(2);
+    state.wallColEls[bestR].td.dataset.spot = "$" + Number(frame.price).toFixed(2);
     state.priceRowEl = tr;
   }
 
@@ -455,9 +499,9 @@
       const chip = document.createElement("span");
       chip.className = "wallchip " + kind;
       chip.textContent = label;
-      state.strikeEls[r].appendChild(chip);
-      if (kind === "call") state.callWallEl = state.strikeEls[r];
-      else state.putWallEl = state.strikeEls[r];
+      state.wallColEls[r].td.appendChild(chip);
+      if (kind === "call") state.callWallEl = state.wallColEls[r].td;
+      else state.putWallEl = state.wallColEls[r].td;
     });
   }
 

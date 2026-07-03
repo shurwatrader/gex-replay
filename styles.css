@@ -94,6 +94,17 @@ select:focus { outline: 1px solid var(--accent); }
   border-right: 2px solid var(--grid-line);
 }
 .grid thead th.strike-head { text-align: right; z-index: 4; }
+/* wall-alert gutter — its own slim sticky column, keeps badges off the data */
+.grid th.wall-col, .grid td.wall-col {
+  position: sticky; left: 58px; z-index: 2;
+  width: 74px; min-width: 74px; max-width: 74px;
+  padding: 0 3px; background: var(--strike-bg);
+  border-right: 2px solid var(--grid-line);
+  text-align: center; overflow: visible;
+}
+.grid thead th.wall-col {
+  z-index: 4; background: var(--header); font-size: 10px; color: var(--text-dim);
+}
 .grid td.cell {
   color: #fff; font-variant-numeric: tabular-nums; min-width: 96px; position: relative;
   padding: 0 6px;
@@ -112,7 +123,7 @@ select:focus { outline: 1px solid var(--accent); }
 .grid tr.price-row td.strike-col {
   background: var(--accent); color: #04121a; font-weight: 800;
 }
-.grid tr.price-row td.strike-col::after {
+.grid tr.price-row td.wall-col::after {
   content: attr(data-spot);
   position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%);
   background: var(--accent); color: #04121a; font-size: 10px; font-weight: 700;
@@ -137,12 +148,19 @@ select:focus { outline: 1px solid var(--accent); }
 .grid td.cell .delta.up { background: #16c268; color: #03130a; }
 .grid td.cell .delta.down { background: #e0344c; color: #fff; }
 
-/* wall-alert badge — small dark pill, like the source's bubbles */
-.grid td.cell .wall {
-  flex: 0 0 auto; font-size: 9px; height: 14px; line-height: 14px; padding: 0 6px;
+/* wall-alert badge in the gutter — colored dot marks call (green) / put (red) side */
+.grid td.wall-col .wall {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 9px; height: 14px; line-height: 14px; padding: 0 5px;
   border-radius: 7px; background: rgba(0, 0, 0, 0.5); color: #e6eaf1;
   border: 1px solid rgba(255, 255, 255, 0.18); white-space: nowrap;
 }
+.grid td.wall-col .wall[hidden] { display: none; }
+.grid td.wall-col .wall::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%; background: #8c919f;
+}
+.grid td.wall-col.side-call .wall::before { background: #22e07a; }
+.grid td.wall-col.side-put .wall::before { background: #ff4d5e; }
 
 /* king stars — green = GEX OI king, red = Vol king; dark disc so they pop */
 .grid td.cell .star {
@@ -234,6 +252,15 @@ tr.price-row .wallchip { left: calc(100% + 64px); }
   .grid { font-size: 11px; }
   .grid td.cell { min-width: 62px; padding: 0 5px; }
   .grid th.strike-col, .grid td.strike-col { width: 46px; min-width: 46px; max-width: 46px; padding: 0 4px; }
+  .grid th.wall-col, .grid td.wall-col { left: 46px; width: 62px; min-width: 62px; max-width: 62px; padding: 0 2px; }
+  .grid td.wall-col .wall { font-size: 8px; padding: 0 4px; }
+  /* compact wall chips on mobile so they don't cover cell values */
+  .wallchip { font-size: 0; padding: 2px 4px; }
+  .wallchip::after { font-size: 8px; font-weight: 700; line-height: 1; }
+  .wallchip.call::after { content: "CW"; }
+  .wallchip.put::after { content: "PW"; }
+  .grid tr.price-row td.wall-col::after { font-size: 9px; padding: 1px 4px; }
+  tr.price-row .wallchip { left: calc(100% + 56px); }
   .legend { padding: 5px 8px; gap: 5px; }
   .leg-val { min-width: 42px; font-size: 10px; }
   .controls { gap: 8px; padding: 8px 10px; }
