@@ -29,6 +29,7 @@ html, body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh; /* avoids mobile address-bar clipping */
   min-height: 0;
   overflow: hidden;
 }
@@ -70,7 +71,7 @@ select:focus { outline: 1px solid var(--accent); }
 .grid-wrap { flex: 1 1 auto; min-height: 0; position: relative; }
 .grid-scroll { position: absolute; inset: 0; overflow: auto; }
 
-.grid { border-collapse: collapse; font-size: 12px; }
+.grid { border-collapse: collapse; font-size: 12px; width: 100%; }
 .grid th, .grid td {
   padding: 0 8px; height: 22px; white-space: nowrap; text-align: right;
   border-right: 1px solid var(--grid-line); border-bottom: 1px solid var(--grid-line);
@@ -90,24 +91,34 @@ select:focus { outline: 1px solid var(--accent); }
 }
 .grid thead th.strike-head { text-align: right; z-index: 4; }
 .grid td.cell {
-  color: #fff; font-variant-numeric: tabular-nums; min-width: 96px;
-  /* keep white numbers legible on bright (yellow/green) cells */
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 1px rgba(0, 0, 0, 0.9);
+  color: #fff; font-variant-numeric: tabular-nums; min-width: 96px; position: relative;
 }
-.grid td.cell.zero { color: #6a7078; text-shadow: none; }
-.grid tr.price-row td.strike-col { color: var(--price); }
+.grid td.cell.zero { color: #5f656e; }
+
+/* spot-price row — bright cyan strike chip + floating price pill, easy to find */
+.grid tr.price-row td.strike-col {
+  background: var(--accent); color: #04121a; font-weight: 800;
+}
 .grid tr.price-row td.strike-col::after {
-  content: "◄"; color: var(--price); font-size: 9px; margin-left: 4px;
+  content: attr(data-spot);
+  position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%);
+  background: var(--accent); color: #04121a; font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 3px; white-space: nowrap; z-index: 6; pointer-events: none;
 }
-.grid tr.price-row td { box-shadow: inset 0 -1px 0 var(--price), inset 0 1px 0 var(--price); }
-/* movers: white ring with a dark liner — high-contrast on every palette color
-   (purple negatives through yellow positives) without a fill that would
-   obscure the number */
-.grid td.mover {
-  outline: 2px solid #ffffff; outline-offset: -2px;
-  box-shadow: inset 0 0 0 4px rgba(0, 0, 0, 0.55);
+.grid tr.price-row td { box-shadow: inset 0 -2px 0 var(--accent), inset 0 2px 0 var(--accent); }
+
+/* movers: thick white ring + dark liner + cyan inner glow + a direction arrow
+   — unmistakable on any cell color, without a fill that obscures the number */
+.grid td.cell.mover {
+  outline: 3px solid #fff; outline-offset: -3px;
+  box-shadow: inset 0 0 0 4px rgba(0, 0, 0, 0.6), inset 0 0 11px 2px rgba(25, 227, 255, 0.55);
   font-weight: 700;
 }
+.grid td.cell.mover::after {
+  content: "▲"; position: absolute; top: 1px; right: 3px;
+  font-size: 9px; line-height: 1; color: #fff; text-shadow: 0 0 2px #000, 0 0 3px #000;
+}
+.grid td.cell.mover[data-dir="down"]::after { content: "▼"; }
 
 .empty {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -149,7 +160,6 @@ select:focus { outline: 1px solid var(--accent); }
 .controls button:hover { border-color: var(--accent); }
 .controls button.play { width: 44px; background: var(--accent); color: #04121a; border-color: var(--accent); font-weight: 700; }
 .controls button.play.playing { background: var(--panel-2); color: var(--text); }
-#prevBtn { transform: scaleX(-1); }
 
 .scrubber { flex: 1; min-width: 180px; accent-color: var(--accent); height: 6px; }
 .ctl-right { display: flex; align-items: center; gap: 18px; }
@@ -159,4 +169,23 @@ select:focus { outline: 1px solid var(--accent); }
 @media (max-width: 720px) {
   .clocks { width: 100%; margin-left: 0; justify-content: space-between; }
   .frame-label { min-width: 0; }
+}
+@media (max-width: 600px) {
+  .topbar { gap: 10px; padding: 8px 10px; }
+  .brand { font-size: 13px; }
+  .topbar-selects { gap: 10px; flex: 1 1 100%; }
+  .topbar-selects label { flex: 1; }
+  .topbar-selects select { flex: 1; min-width: 0; }
+  .clocks { gap: 10px; }
+  .clock .clk { font-size: 12px; }
+  .grid { font-size: 11px; }
+  .grid td.cell { min-width: 62px; padding: 0 5px; }
+  .grid th.strike-col, .grid td.strike-col { width: 46px; min-width: 46px; max-width: 46px; padding: 0 4px; }
+  .legend { padding: 5px 8px; gap: 5px; }
+  .leg-val { min-width: 42px; font-size: 10px; }
+  .controls { gap: 8px; padding: 8px 10px; }
+  .scrubber { min-width: 110px; }
+  .ctl-right { gap: 12px; width: 100%; justify-content: space-between; }
+  .controls button { width: 40px; height: 34px; }   /* larger touch targets */
+  .controls button.play { width: 50px; }
 }

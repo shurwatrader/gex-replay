@@ -74,24 +74,28 @@
     [0.5, 38, 152, 134],
     [1.0, 245, 215, 60],
   ];
-  function colorFor(value) {
-    if (!value) return "rgb(24, 30, 38)"; // zero / empty → near-background
-    // Two-sided signed-log: positives scale toward yellow against the frame's
-    // max, negatives toward purple against the frame's min. Log (not linear)
-    // keeps mid-range cells separated when values span orders of magnitude.
+  // Returns { bg, fg } — fg (text) is chosen dark or light by the background's
+  // luminance so numbers stay readable on both bright and dark cells.
+  function styleFor(value) {
+    if (!value) return { bg: "rgb(24, 30, 38)", fg: "#5f656e" };
     let t = value > 0
       ? Math.log1p(value) / state.logPos
       : -Math.log1p(-value) / state.logNeg;
     t = Math.max(-1, Math.min(1, t));
+    let r = 28, g = 45, b = 60;
     for (let i = 0; i < STOPS.length - 1; i++) {
       const [t0, r0, g0, b0] = STOPS[i];
       const [t1, r1, g1, b1] = STOPS[i + 1];
       if (t >= t0 && t <= t1) {
         const f = (t - t0) / (t1 - t0);
-        return `rgb(${Math.round(r0 + (r1 - r0) * f)},${Math.round(g0 + (g1 - g0) * f)},${Math.round(b0 + (b1 - b0) * f)})`;
+        r = Math.round(r0 + (r1 - r0) * f);
+        g = Math.round(g0 + (g1 - g0) * f);
+        b = Math.round(b0 + (b1 - b0) * f);
+        break;
       }
     }
-    return "rgb(24, 30, 38)";
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    return { bg: `rgb(${r},${g},${b})`, fg: lum > 150 ? "#0a0d11" : "#ffffff" };
   }
 
   // ---------- timezone clocks ----------
@@ -168,6 +172,7 @@
     state.frameIndex = 0;
     els.scrubber.value = "0";
     showFrame(0);
+    scrollToSpot();
   }
 
   function showEmpty(msg) {
@@ -281,9 +286,18 @@
         const text = cell.text ?? "";
         const val = parseCellValue(text);
         td.textContent = text;
-        td.style.background = colorFor(val);
+        const { bg, fg } = styleFor(val);
+        td.style.background = bg;
+        td.style.color = fg;
         td.classList.toggle("zero", !val);
-        td.classList.toggle("mover", movers.has(row.strike + "|" + c));
+        const isMover = movers.has(row.strike + "|" + c);
+        td.classList.toggle("mover", isMover);
+        if (isMover) {
+          const pv = prevMap.get(row.strike + "|" + c);
+          td.dataset.dir = pv != null && val < pv ? "down" : "up";
+        } else if (td.dataset.dir) {
+          delete td.dataset.dir;
+        }
         // hover: value + delta vs previous frame
         const key = row.strike + "|" + c;
         let tip = `${state.expiries[c] || ""} · ${fmtStrike(row.strike)}\n${text || "0"}`;
@@ -304,6 +318,8 @@
   function markPriceRow(frame) {
     if (state.priceRowEl) {
       state.priceRowEl.classList.remove("price-row");
+      const st = state.priceRowEl.querySelector("td.strike-col");
+      if (st) delete st.dataset.spot;
       state.priceRowEl = null;
     }
     if (frame.price == null) return;
@@ -313,10 +329,21 @@
       if (d < bestD) { bestD = d; bestR = r; }
     });
     if (bestR < 0) return;
-    const tr = state.strikeEls[bestR] && state.strikeEls[bestR].parentElement;
+    const stEl = state.strikeEls[bestR];
+    const tr = stEl && stEl.parentElement;
     if (!tr) return;
     tr.classList.add("price-row");
+    stEl.dataset.spot = "$" + Number(frame.price).toFixed(2);
     state.priceRowEl = tr;
+  }
+
+  // Center the spot-price row in view (called once when a date loads, so it
+  // doesn't fight the user's scrolling during playback).
+  function scrollToSpot() {
+    const tr = state.priceRowEl;
+    if (!tr) return;
+    const sc = els.gridScroll;
+    sc.scrollTop = Math.max(0, tr.offsetTop - sc.clientHeight / 2 + tr.offsetHeight / 2);
   }
 
   // ---------- playback ----------
