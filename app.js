@@ -11,8 +11,8 @@
     seriesSelect: $("seriesSelect"),
     datePick: $("datePick"),
     datePickEnd: $("datePickEnd"),
-    clkET: $("clkET"), clkCT: $("clkCT"), clkPT: $("clkPT"),
-    tzET: $("tzET"), tzCT: $("tzCT"), tzPT: $("tzPT"),
+    tradingDay: $("tradingDay"), snapET: $("snapET"),
+    clkCT: $("clkCT"), clkPT: $("clkPT"),
     grid: $("grid"),
     gridScroll: $("gridScroll"),
     empty: $("empty"),
@@ -115,29 +115,38 @@
     };
   }
 
-  // ---------- timezone clocks ----------
+  // ---------- trading day + snapshot clocks ----------
   const TZ = { ET: "America/New_York", CT: "America/Chicago", PT: "America/Los_Angeles" };
   function zoneParts(date, tz) {
     const fmt = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz, hour: "numeric", minute: "2-digit", second: "2-digit",
-      hour12: true, timeZoneName: "short",
+      timeZone: tz, month: "2-digit", day: "2-digit",
+      hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true, timeZoneName: "short",
     });
     const parts = fmt.formatToParts(date);
     const get = (t) => (parts.find((p) => p.type === t) || {}).value || "";
-    return { time: `${get("hour")}:${get("minute")}:${get("second")} ${get("dayPeriod")}`, abbr: get("timeZoneName") };
+    return {
+      date: `${get("month")}/${get("day")}`,
+      time: `${get("hour")}:${get("minute")}:${get("second")} ${get("dayPeriod")}`,
+      abbr: get("timeZoneName"),
+    };
   }
-  function updateClocks(capturedAt) {
+  function fmtTradingDay(td) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(td || "");
+    return m ? `${m[2]}/${m[3]}/${m[1]}` : (td || "—");
+  }
+  // Trading Day = the assigned session (8 PM ET roll); Snapshot = exact ET
+  // date+time, so overnight data reads e.g. "Trading Day 7/6 · Snapshot 7/5 8:00 PM".
+  function updateClocks(capturedAt, tradingDay) {
+    els.tradingDay.textContent = fmtTradingDay(tradingDay);
     const d = capturedAt ? new Date(capturedAt) : null;
     if (!d || isNaN(d)) {
-      els.clkET.textContent = els.clkCT.textContent = els.clkPT.textContent = "—";
+      els.snapET.textContent = els.clkCT.textContent = els.clkPT.textContent = "—";
       return;
     }
-    [["ET", els.clkET, els.tzET], ["CT", els.clkCT, els.tzCT], ["PT", els.clkPT, els.tzPT]]
-      .forEach(([k, clkEl, tzEl]) => {
-        const { time, abbr } = zoneParts(d, TZ[k]);
-        clkEl.textContent = time;
-        tzEl.textContent = abbr || k;
-      });
+    const et = zoneParts(d, TZ.ET);
+    els.snapET.textContent = `${et.date}, ${et.time} ${et.abbr}`;
+    els.clkCT.textContent = zoneParts(d, TZ.CT).time;
+    els.clkPT.textContent = zoneParts(d, TZ.PT).time;
   }
 
   // ---------- data loading ----------
@@ -408,7 +417,7 @@
 
     markPriceRow(frame);
     markWalls(rowSum);
-    updateClocks(frame.capturedAt);
+    updateClocks(frame.capturedAt, frame.tradingDay);
     els.scrubber.value = String(idx);
     els.frameLabel.textContent = `${idx + 1} / ${frames.length}`;
   }
@@ -447,7 +456,7 @@
       if (v < putV) { putV = v; putStrike = s; }
     });
 
-    const set = (strike, kind, label) => {
+    const set = (strike, kind, label, abbr) => {
       if (strike == null) return;
       const r = state.strikes.indexOf(strike);
       if (r < 0) return;
@@ -455,11 +464,12 @@
       const g = state.wallColEls[r];
       g.pill.hidden = false;
       g.pill.textContent = label;
+      g.pill.dataset.abbr = abbr;  // shown instead of the label on mobile
       g.pill.className = "wall " + kind;
       if (kind === "call") state.callWall = r; else state.putWall = r;
     };
-    set(callStrike, "call", "Call Wall");
-    set(putStrike, "put", "Put Wall");
+    set(callStrike, "call", "Call Wall", "CW");
+    set(putStrike, "put", "Put Wall", "PW");
   }
 
   function scrollToSpot() {

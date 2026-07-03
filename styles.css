@@ -68,15 +68,13 @@ input[type="date"] {
 input[type="date"]:focus { outline: 1px solid var(--accent); }
 .range-end { color: var(--text-faint); }
 
-/* capture-time clocks in three US market zones */
-.clocks { display: flex; align-items: center; gap: 18px; margin-left: auto; }
-.clocks-label {
-  font-size: 9px; line-height: 1.15; color: var(--text-faint);
-  letter-spacing: .07em; text-align: right; text-transform: uppercase;
-}
-.clock { display: flex; flex-direction: column; align-items: flex-end; }
-.clock .tz { font-size: 10px; color: var(--text-faint); letter-spacing: .08em; }
-.clock .clk { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Trading Day + Snapshot (ET) — dual timestamp so overnight data is unambiguous */
+.topmeta { display: flex; align-items: stretch; gap: 22px; margin-left: auto; }
+.meta-block { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; }
+.meta-label { font-size: 9px; color: var(--text-faint); letter-spacing: .08em; text-transform: uppercase; }
+.meta-val { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+.meta-val.td { color: var(--accent); }
+.meta-sub { font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; margin-top: 1px; }
 
 /* ---------- grid ---------- */
 .grid-wrap { flex: 1 1 auto; min-height: 0; position: relative; }
@@ -133,7 +131,7 @@ input[type="date"]:focus { outline: 1px solid var(--accent); }
 
 /* movers: color says direction — green ring/chip = up, red = down. The value
    itself stays bold + shadowed (set inline) for legibility over the fill. */
-.grid td.cell .val { font-weight: 600; }
+.grid td.cell .val { font-weight: 700; }
 .grid td.cell.mover .val { font-weight: 800; }
 .grid td.cell.mover[data-dir="up"] {
   outline: 2px solid #22e07a; outline-offset: -2px;
@@ -227,7 +225,7 @@ input[type="date"]:focus { outline: 1px solid var(--accent); }
 .movers-toggle input { accent-color: var(--highlight); }
 
 @media (max-width: 720px) {
-  .clocks { width: 100%; margin-left: 0; justify-content: space-between; }
+  .topmeta { width: 100%; margin-left: 0; justify-content: space-between; }
   .frame-label { min-width: 0; }
 }
 @media (max-width: 600px) {
@@ -237,14 +235,16 @@ input[type="date"]:focus { outline: 1px solid var(--accent); }
   .topbar-selects { flex: 1 1 100%; flex-direction: column; align-items: stretch; gap: 6px; }
   .topbar-selects label { justify-content: space-between; }
   .topbar-selects select, .topbar-selects input[type="date"] { flex: 1; min-width: 0; margin-left: 8px; }
-  .clocks { gap: 10px; }
-  .clocks-label { font-size: 8px; }
-  .clock .clk { font-size: 12px; }
+  .topmeta { gap: 12px; }
+  .meta-val { font-size: 12px; }
+  .meta-sub { font-size: 8px; }
   .grid { font-size: 11px; }
   .grid td.cell { min-width: 62px; padding: 0 5px; }
   .grid th.strike-col, .grid td.strike-col { width: 46px; min-width: 46px; max-width: 46px; padding: 0 4px; }
-  .grid th.wall-col, .grid td.wall-col { left: 46px; width: 66px; min-width: 66px; max-width: 66px; padding: 0 2px; }
-  .grid td.wall-col .wall { font-size: 8px; padding: 0 4px; }
+  /* narrower gutter on mobile — badges abbreviate to CW/PW */
+  .grid th.wall-col, .grid td.wall-col { left: 46px; width: 40px; min-width: 40px; max-width: 40px; padding: 0 2px; }
+  .grid td.wall-col .wall { font-size: 0; padding: 0 4px; }
+  .grid td.wall-col .wall::after { content: attr(data-abbr); font-size: 9px; font-weight: 700; }
   .legend { padding: 5px 8px; gap: 5px; }
   .leg-val { min-width: 42px; font-size: 10px; }
   .controls { gap: 8px; padding: 8px 10px; }

@@ -60,7 +60,7 @@ def ts_label(stem):
     return hhmmss
 
 
-def build_frame(json_path):
+def build_frame(json_path, trading_day):
     with open(json_path, encoding="utf-8") as f:
         d = json.load(f)
     price = d.get("price")
@@ -70,6 +70,7 @@ def build_frame(json_path):
         price = None
     return {
         "ts": ts_label(json_path.stem),
+        "tradingDay": trading_day,   # ET 8 PM-roll session this snapshot belongs to
         "capturedAt": d.get("capturedAt"),
         "price": price,
         "netExposure": d.get("netExposure"),
@@ -115,7 +116,7 @@ def main():
             if not json_files:
                 continue
 
-            frames = [build_frame(jf) for jf in json_files]
+            frames = [build_frame(jf, date) for jf in json_files]
             # ET filenames wrap past midnight inside one trading day, so order
             # by capturedAt (UTC) to keep the replay chronological.
             frames.sort(key=lambda fr: fr.get("capturedAt") or "")

@@ -24,11 +24,16 @@
         <input type="date" id="datePickEnd" />
       </label>
     </div>
-    <div class="clocks" id="clocks">
-      <span class="clocks-label">SNAPSHOT<br>CAPTURED</span>
-      <div class="clock"><span class="tz" id="tzET">ET</span><span id="clkET" class="clk">—</span></div>
-      <div class="clock"><span class="tz" id="tzCT">CT</span><span id="clkCT" class="clk">—</span></div>
-      <div class="clock"><span class="tz" id="tzPT">PT</span><span id="clkPT" class="clk">—</span></div>
+    <div class="topmeta">
+      <div class="meta-block">
+        <span class="meta-label">TRADING DAY</span>
+        <span id="tradingDay" class="meta-val td">—</span>
+      </div>
+      <div class="meta-block">
+        <span class="meta-label">SNAPSHOT (ET)</span>
+        <span id="snapET" class="meta-val">—</span>
+        <span class="meta-sub"><span id="clkCT">—</span> CT · <span id="clkPT">—</span> PT</span>
+      </div>
     </div>
   </header>
 
@@ -62,11 +67,9 @@
     <div class="ctl-right">
       <label class="speed">Speed
         <select id="speedSelect">
-          <option value="0.5">0.5×</option>
+          <option value="0.5" selected>0.5×</option>
           <option value="1">1×</option>
-          <option value="2" selected>2×</option>
-          <option value="4">4×</option>
-          <option value="8">8×</option>
+          <option value="2">2×</option>
         </select>
       </label>
       <label class="movers-toggle" title="Outline the biggest changes since the previous frame">
