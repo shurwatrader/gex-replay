@@ -1,7 +1,7 @@
 /* GEX Replay — interactive frame-by-frame heatmap player.
-   The scraped per-cell colors are near-uniform, so we color each cell from its
-   numeric value using a diverging scale (purple = negative, teal/green/yellow =
-   positive), matching the source terminal's heatmap. */
+   The grid is built from the UNION of expiries/strikes across the whole day and
+   each frame's values are mapped by expiry name, so frames captured after an
+   expiry rolls off the board still line up under the right date headers. */
 (() => {
   "use strict";
 
@@ -34,12 +34,15 @@
     frameIndex: 0,
     playing: false,
     timer: null,
-    cellEls: [],
-    strikeEls: [],
+    expiries: [],   // union across the day, chronological
+    strikes: [],    // union across the day, descending
+    cellEls: [],    // [strikeIdx][expiryIdx] -> { td, wall, starOi, starVol, delta, val }
+    strikeEls: [],  // per-row strike <td>
+    rowEls: [],     // per-row <tr>
     priceRowEl: null,
+    callWallEl: null, putWallEl: null,   // strike <td>s holding wall chips
     posMax: 1,  // color scale anchors, recomputed per frame:
     negMax: 1,  // purple = frame min, yellow = frame max
-    expiries: [],
   };
 
   // ---------- number parsing ----------
@@ -80,7 +83,6 @@
   }
 
   // ---------- diverging color scale ----------
-  // stops keyed on t in [-1, 1]
   const STOPS = [
     [-1.0, 150, 60, 170],
     [-0.5, 70, 90, 180],
@@ -88,13 +90,11 @@
     [0.5, 38, 152, 134],
     [1.0, 245, 215, 60],
   ];
-  // Returns { bg, fg } — fg (text) is chosen dark or light by the background's
-  // luminance so numbers stay readable on both bright and dark cells.
+  // { bg, fg } — fg picked dark or light by the background's luminance.
   function styleFor(value) {
     if (!value) return { bg: "rgb(24, 30, 38)", fg: "#5f656e" };
-    // Square-root scale (not log): log over-compressed the mid range so a 14M
-    // cell looked almost as hot as a 110M one. sqrt spreads the big values —
-    // low-mid stays blue-green, only the frame's largest reaches yellow.
+    // Square-root scale: log over-compressed the mid range. sqrt keeps low-mid
+    // values blue-green; only the frame's largest values reach yellow.
     let t = value > 0
       ? Math.sqrt(value / state.posMax)
       : -Math.sqrt(-value / state.negMax);
@@ -199,11 +199,24 @@
   }
 
   // ---------- grid construction (once per date) ----------
+  function expiryDate(e) {
+    // "07-06-2026" -> sortable timestamp
+    const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(e);
+    return m ? new Date(`${m[3]}-${m[1]}-${m[2]}`).getTime() : 0;
+  }
+
   function buildGrid(frames) {
     if (!frames.length) { showEmpty("This day has no frames."); return; }
-    const expiries = frames[0].expiries || [];
-    const rows = frames[0].rows || [];
-    state.expiries = expiries;
+
+    // Union of expiries and strikes across every frame of the day, so late
+    // frames (after an expiry drops off the board) still map correctly.
+    const expirySet = new Set(), strikeSet = new Set();
+    frames.forEach((f) => {
+      (f.expiries || []).forEach((e) => expirySet.add(e));
+      (f.rows || []).forEach((r) => strikeSet.add(r.strike));
+    });
+    state.expiries = [...expirySet].sort((a, b) => expiryDate(a) - expiryDate(b));
+    state.strikes = [...strikeSet].sort((a, b) => b - a);
 
     const thead = document.createElement("thead");
     const htr = document.createElement("tr");
@@ -211,7 +224,7 @@
     strikeHead.className = "strike-col strike-head";
     strikeHead.textContent = "STRIKE";
     htr.appendChild(strikeHead);
-    expiries.forEach((e) => {
+    state.expiries.forEach((e) => {
       const th = document.createElement("th");
       th.textContent = e;
       htr.appendChild(th);
@@ -221,26 +234,37 @@
     const tbody = document.createElement("tbody");
     state.cellEls = [];
     state.strikeEls = [];
-    rows.forEach((row) => {
+    state.rowEls = [];
+    state.strikes.forEach((strike) => {
       const tr = document.createElement("tr");
       const stTd = document.createElement("td");
       stTd.className = "strike-col";
-      stTd.textContent = fmtStrike(row.strike);
+      stTd.textContent = String(strike);
       tr.appendChild(stTd);
       state.strikeEls.push(stTd);
+      state.rowEls.push(tr);
 
       const rowCells = [];
-      (row.values || []).forEach(() => {
+      state.expiries.forEach(() => {
         const td = document.createElement("td");
         td.className = "cell";
-        const wall = document.createElement("span");   // wall-alert badge (left)
+        // flex layout inside the cell: [wall pill][stars][delta chip] ... [value]
+        const cw = document.createElement("div");
+        cw.className = "cw";
+        const wall = document.createElement("span");
         wall.className = "wall"; wall.hidden = true;
-        const val = document.createElement("span");     // the GEX value (right)
+        const starOi = document.createElement("span");
+        starOi.className = "star oi"; starOi.textContent = "★"; starOi.hidden = true;
+        const starVol = document.createElement("span");
+        starVol.className = "star vol"; starVol.textContent = "★"; starVol.hidden = true;
+        const delta = document.createElement("span");
+        delta.className = "delta"; delta.hidden = true;
+        const val = document.createElement("span");
         val.className = "val";
-        td.appendChild(wall);
-        td.appendChild(val);
+        cw.append(wall, starOi, starVol, delta, val);
+        td.appendChild(cw);
         tr.appendChild(td);
-        rowCells.push(td);
+        rowCells.push({ td, wall, starOi, starVol, delta, val });
       });
       state.cellEls.push(rowCells);
       tbody.appendChild(tr);
@@ -249,112 +273,138 @@
     els.grid.innerHTML = "";
     els.grid.appendChild(thead);
     els.grid.appendChild(tbody);
-  }
-
-  function fmtStrike(s) { return Number.isInteger(s) ? String(s) : String(s); }
-
-  // ---------- movers (biggest change vs previous frame) ----------
-  function computeMovers(frame, prevFrame, count = 6) {
-    const keys = new Set();
-    if (!prevFrame) return keys;
-    const prev = new Map();
-    (prevFrame.rows || []).forEach((row) => (row.values || []).forEach((cell, c) =>
-      prev.set(row.strike + "|" + c, parseCellValue(cell.text))));
-    const deltas = [];
-    (frame.rows || []).forEach((row) => (row.values || []).forEach((cell, c) => {
-      const key = row.strike + "|" + c;
-      if (!prev.has(key)) return;
-      const d = Math.abs(parseCellValue(cell.text) - prev.get(key));
-      if (d > 0) deltas.push([d, key]);
-    }));
-    deltas.sort((a, b) => b[0] - a[0]);
-    for (let i = 0; i < Math.min(count, deltas.length); i++) keys.add(deltas[i][1]);
-    return keys;
+    state.priceRowEl = null;
+    state.callWallEl = null;
+    state.putWallEl = null;
   }
 
   // ---------- per-frame render ----------
+  // Map a frame to { "strike|expiry": parsedCell }
+  function frameMap(frame) {
+    const map = new Map();
+    if (!frame) return map;
+    const exps = frame.expiries || [];
+    (frame.rows || []).forEach((row) => {
+      (row.values || []).forEach((cell, c) => {
+        const exp = exps[c];
+        if (exp != null) map.set(row.strike + "|" + exp, parseCell(cell));
+      });
+    });
+    return map;
+  }
+
   function showFrame(idx) {
     const frames = state.bundle.frames;
     if (!frames || !frames.length) return;
     idx = Math.max(0, Math.min(frames.length - 1, idx));
     state.frameIndex = idx;
     const frame = frames[idx];
-    const prevFrame = idx > 0 ? frames[idx - 1] : null;
-    const movers = els.moversToggle.checked ? computeMovers(frame, prevFrame) : new Set();
+    const cur = frameMap(frame);
+    const prev = idx > 0 ? frameMap(frames[idx - 1]) : new Map();
 
-    // Per-frame color scale: anchor the palette to this frame's actual extremes
-    // so the legend's ends equal the lowest/highest GEX numbers on screen.
+    // Per-frame color scale anchored to this frame's actual extremes.
     let vmin = 0, vmax = 0;
-    (frame.rows || []).forEach((row) => (row.values || []).forEach((c) => {
-      const v = parseCellValue(c.text);
-      if (v < vmin) vmin = v;
-      if (v > vmax) vmax = v;
-    }));
+    cur.forEach((p) => {
+      if (p.num < vmin) vmin = p.num;
+      if (p.num > vmax) vmax = p.num;
+    });
     state.posMax = Math.max(vmax, 1);
     state.negMax = Math.max(-vmin, 1);
     els.legMin.textContent = fmtCompact(vmin);
     els.legMax.textContent = "+" + fmtCompact(vmax);
 
-    // prev-frame lookup for per-cell delta tooltips
-    const prevMap = new Map();
-    if (prevFrame) (prevFrame.rows || []).forEach((row) => (row.values || []).forEach((cell, c) =>
-      prevMap.set(row.strike + "|" + c, parseCellValue(cell.text))));
+    // Movers: top 6 |delta| vs previous frame (keyed strike|expiry).
+    const moverMap = new Map();
+    if (els.moversToggle.checked && prev.size) {
+      const deltas = [];
+      cur.forEach((p, key) => {
+        const pp = prev.get(key);
+        if (!pp) return;
+        const d = p.num - pp.num;
+        if (d !== 0) deltas.push([Math.abs(d), key, d]);
+      });
+      deltas.sort((a, b) => b[0] - a[0]);
+      deltas.slice(0, 6).forEach(([, key, d]) => moverMap.set(key, d));
+    }
 
-    (frame.rows || []).forEach((row, r) => {
-      const rowCells = state.cellEls[r];
-      if (!rowCells) return;
-      (row.values || []).forEach((cell, c) => {
-        const td = rowCells[c];
-        if (!td) return;
-        const parsed = parseCell(cell);
-        const text = parsed.display;
-        const num = parsed.num;
-        const wallEl = td.firstChild, valEl = td.lastChild;
-        valEl.textContent = text;
-        const { bg, fg } = styleFor(num);
-        td.style.background = bg;
-        td.style.color = fg;
-        td.classList.toggle("zero", !num);
+    // Row totals for call/put wall detection.
+    const rowSum = new Map();
 
-        // wall-alert badge (new scraper fields, or split from an old blob)
-        const wallText = [parsed.wallOI, parsed.wallPct].filter(Boolean).join(" ");
-        if (wallText) {
-          wallEl.hidden = false;
-          wallEl.textContent = wallText;
-        } else if (!wallEl.hidden) {
-          wallEl.hidden = true;
-          wallEl.textContent = "";
+    state.strikes.forEach((strike, r) => {
+      state.expiries.forEach((exp, c) => {
+        const key = strike + "|" + exp;
+        const el = state.cellEls[r][c];
+        const p = cur.get(key);
+
+        if (!p) {
+          // expiry not present in this frame (e.g. already expired)
+          el.td.className = "cell absent";
+          el.td.style.background = "";
+          el.td.style.color = "";
+          el.val.textContent = "";
+          el.wall.hidden = el.starOi.hidden = el.starVol.hidden = el.delta.hidden = true;
+          el.td.title = "";
+          delete el.td.dataset.dir;
+          return;
         }
-        // GEX OI king (green ★) / Vol king (red ★)
-        td.classList.toggle("oi-king", !!cell.oiKing);
-        td.classList.toggle("vol-king", !!cell.volKing);
+        rowSum.set(strike, (rowSum.get(strike) || 0) + p.num);
 
-        const isMover = movers.has(row.strike + "|" + c);
-        td.classList.toggle("mover", isMover);
-        if (isMover) {
-          const pv = prevMap.get(row.strike + "|" + c);
-          td.dataset.dir = pv != null && num < pv ? "down" : "up";
-        } else if (td.dataset.dir) {
-          delete td.dataset.dir;
+        el.td.className = "cell" + (p.num ? "" : " zero");
+        el.val.textContent = p.display;
+        const { bg, fg } = styleFor(p.num);
+        el.td.style.background = bg;
+        el.td.style.color = fg;
+
+        // wall-alert badge
+        const wallText = [p.wallOI, p.wallPct].filter(Boolean).join(" ");
+        el.wall.hidden = !wallText;
+        if (wallText) el.wall.textContent = wallText;
+
+        // king stars
+        const raw = frameCell(frame, strike, exp);
+        el.starOi.hidden = !(raw && raw.oiKing);
+        el.starVol.hidden = !(raw && raw.volKing);
+
+        // mover delta chip (green up / red down)
+        const d = moverMap.get(key);
+        if (d != null) {
+          el.td.classList.add("mover");
+          el.td.dataset.dir = d < 0 ? "down" : "up";
+          el.delta.hidden = false;
+          el.delta.textContent = (d < 0 ? "▼ " : "▲ ") + fmtCompact(Math.abs(d));
+          el.delta.className = "delta " + (d < 0 ? "down" : "up");
+        } else {
+          el.delta.hidden = true;
+          delete el.td.dataset.dir;
         }
-        // hover: value + delta + wall + king
-        const key = row.strike + "|" + c;
-        let tip = `${state.expiries[c] || ""} · ${fmtStrike(row.strike)}\n${text || "0"}`;
-        if (prevMap.has(key)) {
-          const d = num - prevMap.get(key);
-          tip += `\nΔ ${d >= 0 ? "+" : ""}${fmtCompact(d)} vs prev`;
+
+        // tooltip
+        let tip = `${exp} · ${strike}\n${p.display || "0"}`;
+        const pp = prev.get(key);
+        if (pp) {
+          const dd = p.num - pp.num;
+          tip += `\nΔ ${dd >= 0 ? "+" : ""}${fmtCompact(dd)} vs prev`;
         }
         if (wallText) tip += `\nWall: ${wallText}`;
-        if (cell.oiKing) tip += `\n★ GEX OI king`;
-        if (cell.volKing) tip += `\n★ GEX Vol king`;
-        td.title = tip;
+        if (raw && raw.oiKing) tip += `\n★ GEX OI king`;
+        if (raw && raw.volKing) tip += `\n★ GEX Vol king`;
+        el.td.title = tip;
       });
     });
 
     markPriceRow(frame);
+    markWalls(rowSum);
     updateClocks(frame.capturedAt);
     els.scrubber.value = String(idx);
     els.frameLabel.textContent = `${idx + 1} / ${frames.length}`;
+  }
+
+  // raw cell object (for star flags) by strike + expiry name
+  function frameCell(frame, strike, exp) {
+    const c = (frame.expiries || []).indexOf(exp);
+    if (c < 0) return null;
+    const row = (frame.rows || []).find((r) => r.strike === strike);
+    return row ? (row.values || [])[c] : null;
   }
 
   function markPriceRow(frame) {
@@ -366,21 +416,52 @@
     }
     if (frame.price == null) return;
     let bestR = -1, bestD = Infinity;
-    (frame.rows || []).forEach((row, r) => {
-      const d = Math.abs(row.strike - frame.price);
+    state.strikes.forEach((s, r) => {
+      const d = Math.abs(s - frame.price);
       if (d < bestD) { bestD = d; bestR = r; }
     });
     if (bestR < 0) return;
-    const stEl = state.strikeEls[bestR];
-    const tr = stEl && stEl.parentElement;
-    if (!tr) return;
+    const tr = state.rowEls[bestR];
     tr.classList.add("price-row");
-    stEl.dataset.spot = "$" + Number(frame.price).toFixed(2);
+    state.strikeEls[bestR].dataset.spot = "$" + Number(frame.price).toFixed(2);
     state.priceRowEl = tr;
   }
 
-  // Center the spot-price row in view (called once when a date loads, so it
-  // doesn't fight the user's scrolling during playback).
+  // Call wall = strike with the largest positive total GEX across expiries;
+  // put wall = most negative. Marked with a chip + dashed row line, like the
+  // source terminal.
+  function markWalls(rowSum) {
+    [["call", state.callWallEl], ["put", state.putWallEl]].forEach(([kind, el]) => {
+      if (el) {
+        el.parentElement.classList.remove(kind + "-wall");
+        const chip = el.querySelector(".wallchip");
+        if (chip) chip.remove();
+      }
+    });
+    state.callWallEl = state.putWallEl = null;
+
+    let callStrike = null, callV = 0, putStrike = null, putV = 0;
+    rowSum.forEach((v, s) => {
+      if (v > callV) { callV = v; callStrike = s; }
+      if (v < putV) { putV = v; putStrike = s; }
+    });
+
+    [["call", callStrike, "Call Wall"], ["put", putStrike, "Put Wall"]].forEach(([kind, strike, label]) => {
+      if (strike == null) return;
+      const r = state.strikes.indexOf(strike);
+      if (r < 0) return;
+      const tr = state.rowEls[r];
+      tr.classList.add(kind + "-wall");
+      const chip = document.createElement("span");
+      chip.className = "wallchip " + kind;
+      chip.textContent = label;
+      state.strikeEls[r].appendChild(chip);
+      if (kind === "call") state.callWallEl = state.strikeEls[r];
+      else state.putWallEl = state.strikeEls[r];
+    });
+  }
+
+  // Center the spot-price row in view (once per date load).
   function scrollToSpot() {
     const tr = state.priceRowEl;
     if (!tr) return;
