@@ -2,19 +2,18 @@
 Build step for the GEX Replay site.
 
 Scans the local gex_snapshots collection, bundles every day's JSON snapshots
-into one file per (series, date), copies the matching rendered PNG frames into
-the site, and writes a manifest the web app reads to discover what's available.
+into one file per (series, date), and writes a manifest the web app reads to
+discover what's available. The app rebuilds the heatmap live from this JSON.
 
 Re-run this whenever you want to publish new snapshots, then commit + push.
 
 Usage:
     python scripts/build_manifest.py
-    python scripts/build_manifest.py --source "C:/Users/jalee/gex_snapshots" --copy-frames
+    python scripts/build_manifest.py --source "C:/Users/jalee/gex_snapshots"
 """
 import argparse
 import json
 import re
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -61,7 +60,7 @@ def ts_label(stem):
     return hhmmss
 
 
-def build_frame(json_path, frame_rel):
+def build_frame(json_path):
     with open(json_path, encoding="utf-8") as f:
         d = json.load(f)
     price = d.get("price")
@@ -77,7 +76,6 @@ def build_frame(json_path, frame_rel):
         "netExposureValue": parse_money(d.get("netExposure")),
         "expiries": d.get("expiries", []),
         "rows": d.get("rows", []),
-        "frame": frame_rel,
     }
 
 
@@ -87,8 +85,6 @@ def main():
                     help="Root of the gex_snapshots collection.")
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent.parent),
                     help="Site root to write data/ into (defaults to repo root).")
-    ap.add_argument("--copy-frames", action="store_true",
-                    help="Also copy the rendered PNG frames into the site.")
     args = ap.parse_args()
 
     source = Path(args.source)
@@ -109,7 +105,6 @@ def main():
 
         slug = series_dir.name
         symbol = slug.split("_")[0]
-        frames_root = series_dir / "frames"
         series_data_out = data_out / slug
         series_data_out.mkdir(parents=True, exist_ok=True)
 
@@ -120,17 +115,7 @@ def main():
             if not json_files:
                 continue
 
-            frames = []
-            for jf in json_files:
-                frame_rel = None
-                png = frames_root / date / (jf.stem + ".png")
-                if png.exists():
-                    frame_rel = f"frames/{slug}/{date}/{png.name}"
-                    if args.copy_frames:
-                        dst = out / frame_rel
-                        dst.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(png, dst)
-                frames.append(build_frame(jf, frame_rel))
+            frames = [build_frame(jf) for jf in json_files]
 
             bundle_rel = f"data/{slug}/{date}.json"
             with open(out / bundle_rel, "w", encoding="utf-8") as f:

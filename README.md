@@ -24,11 +24,9 @@ git add -A && git commit -m "Update snapshots"
 git push
 ```
 
-Add `--copy-frames` if you also want the rendered PNGs copied into the site
-(the app doesn't need them — it draws from JSON — but they're handy as a backup).
-
 By default the build reads from `C:/Users/jalee/gex_snapshots`; override with
-`--source <path>`.
+`--source <path>`. Note: in normal use `collect.py` runs this automatically
+after each capture, so you rarely run it by hand.
 
 ## Running locally
 
