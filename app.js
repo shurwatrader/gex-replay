@@ -216,6 +216,12 @@
       (row.values || []).forEach(() => {
         const td = document.createElement("td");
         td.className = "cell";
+        const wall = document.createElement("span");   // wall-alert badge (left)
+        wall.className = "wall"; wall.hidden = true;
+        const val = document.createElement("span");     // the GEX value (right)
+        val.className = "val";
+        td.appendChild(wall);
+        td.appendChild(val);
         tr.appendChild(td);
         rowCells.push(td);
       });
@@ -284,27 +290,45 @@
         const td = rowCells[c];
         if (!td) return;
         const text = cell.text ?? "";
-        const val = parseCellValue(text);
-        td.textContent = text;
-        const { bg, fg } = styleFor(val);
+        const num = parseCellValue(text);
+        const wallEl = td.firstChild, valEl = td.lastChild;
+        valEl.textContent = text;
+        const { bg, fg } = styleFor(num);
         td.style.background = bg;
         td.style.color = fg;
-        td.classList.toggle("zero", !val);
+        td.classList.toggle("zero", !num);
+
+        // wall-alert badge (new scraper field; absent on old frames)
+        const wallText = [cell.wallOI, cell.wallPct].filter(Boolean).join(" ");
+        if (wallText) {
+          wallEl.hidden = false;
+          wallEl.textContent = wallText;
+        } else if (!wallEl.hidden) {
+          wallEl.hidden = true;
+          wallEl.textContent = "";
+        }
+        // GEX OI king (green ★) / Vol king (red ★)
+        td.classList.toggle("oi-king", !!cell.oiKing);
+        td.classList.toggle("vol-king", !!cell.volKing);
+
         const isMover = movers.has(row.strike + "|" + c);
         td.classList.toggle("mover", isMover);
         if (isMover) {
           const pv = prevMap.get(row.strike + "|" + c);
-          td.dataset.dir = pv != null && val < pv ? "down" : "up";
+          td.dataset.dir = pv != null && num < pv ? "down" : "up";
         } else if (td.dataset.dir) {
           delete td.dataset.dir;
         }
-        // hover: value + delta vs previous frame
+        // hover: value + delta + wall + king
         const key = row.strike + "|" + c;
         let tip = `${state.expiries[c] || ""} · ${fmtStrike(row.strike)}\n${text || "0"}`;
         if (prevMap.has(key)) {
-          const d = val - prevMap.get(key);
+          const d = num - prevMap.get(key);
           tip += `\nΔ ${d >= 0 ? "+" : ""}${fmtCompact(d)} vs prev`;
         }
+        if (wallText) tip += `\nWall: ${wallText}`;
+        if (cell.oiKing) tip += `\n★ GEX OI king`;
+        if (cell.volKing) tip += `\n★ GEX Vol king`;
         td.title = tip;
       });
     });

@@ -120,6 +120,22 @@ select:focus { outline: 1px solid var(--accent); }
 }
 .grid td.cell.mover[data-dir="down"]::after { content: "▼"; }
 
+/* wall-alert badge — small pill on the left, doesn't cover the right-aligned value */
+.grid td.cell .wall {
+  position: absolute; left: 3px; top: 50%; transform: translateY(-50%);
+  font-size: 9px; height: 13px; line-height: 13px; padding: 0 5px; border-radius: 7px;
+  background: rgba(0, 0, 0, 0.42); color: #dfe3ea; white-space: nowrap; pointer-events: none;
+}
+.grid td.cell .wall[hidden] { display: none; }
+
+/* king stars — green = GEX OI king, red = Vol king (top-left corner) */
+.grid td.cell.oi-king::before, .grid td.cell.vol-king::before {
+  content: "\2605"; position: absolute; top: 0; left: 3px;
+  font-size: 10px; line-height: 1.2; text-shadow: 0 0 2px #000, 0 0 3px #000; pointer-events: none;
+}
+.grid td.cell.oi-king::before { color: #00ea75; }
+.grid td.cell.vol-king::before { color: #ff3030; }
+
 .empty {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   color: var(--text-dim); font-size: 14px; text-align: center; padding: 20px;
