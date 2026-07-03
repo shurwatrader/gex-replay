@@ -129,7 +129,6 @@ select:focus { outline: 1px solid var(--accent); }
   background: var(--accent); color: #04121a; font-size: 10px; font-weight: 700;
   padding: 1px 6px; border-radius: 3px; white-space: nowrap; z-index: 6; pointer-events: none;
 }
-.grid tr.price-row td { box-shadow: inset 0 -2px 0 var(--accent), inset 0 2px 0 var(--accent); }
 
 /* movers: color says direction — green ring/chip = up, red = down */
 .grid td.cell.mover { font-weight: 700; }
@@ -148,19 +147,23 @@ select:focus { outline: 1px solid var(--accent); }
 .grid td.cell .delta.up { background: #16c268; color: #03130a; }
 .grid td.cell .delta.down { background: #e0344c; color: #fff; }
 
-/* wall-alert badge in the gutter — colored dot marks call (green) / put (red) side */
+/* top-volume badge in the gutter — green pill = call top volume, red = put
+   top volume (matches the source terminal's bubbles) */
 .grid td.wall-col .wall {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 9px; height: 14px; line-height: 14px; padding: 0 5px;
-  border-radius: 7px; background: rgba(0, 0, 0, 0.5); color: #e6eaf1;
-  border: 1px solid rgba(255, 255, 255, 0.18); white-space: nowrap;
+  display: inline-flex; align-items: center;
+  font-size: 9px; height: 14px; line-height: 14px; padding: 0 6px;
+  border-radius: 7px; white-space: nowrap;
+  background: rgba(0, 0, 0, 0.5); color: #e6eaf1;
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 .grid td.wall-col .wall[hidden] { display: none; }
-.grid td.wall-col .wall::before {
-  content: ""; width: 6px; height: 6px; border-radius: 50%; background: #8c919f;
+.grid td.wall-col.side-call .wall {
+  background: rgba(4, 34, 20, 0.85); color: #7dffb8;
+  border-color: rgba(34, 224, 122, 0.65);
 }
-.grid td.wall-col.side-call .wall::before { background: #22e07a; }
-.grid td.wall-col.side-put .wall::before { background: #ff4d5e; }
+.grid td.wall-col.side-put .wall {
+  background: #b8222f; color: #fff; border-color: #d8404c;
+}
 
 /* king stars — green = GEX OI king, red = Vol king; dark disc so they pop */
 .grid td.cell .star {

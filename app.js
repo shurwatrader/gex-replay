@@ -226,7 +226,7 @@
     htr.appendChild(strikeHead);
     const wallHead = document.createElement("th");
     wallHead.className = "wall-col";
-    wallHead.textContent = "WALL";
+    wallHead.textContent = "TOP VOL";
     htr.appendChild(wallHead);
     state.headerEls = [];
     state.expiries.forEach((e) => {
