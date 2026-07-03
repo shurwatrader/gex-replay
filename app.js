@@ -37,8 +37,8 @@
     cellEls: [],
     strikeEls: [],
     priceRowEl: null,
-    logPos: Math.log1p(1),  // color scale anchors, recomputed per frame:
-    logNeg: Math.log1p(1),  // purple = frame min, yellow = frame max
+    posMax: 1,  // color scale anchors, recomputed per frame:
+    negMax: 1,  // purple = frame min, yellow = frame max
     expiries: [],
   };
 
@@ -53,6 +53,20 @@
     if (!m) return 0;
     const mult = { "": 1, K: 1e3, M: 1e6, B: 1e9 }[m[2]];
     return parseFloat(m[1]) * mult;
+  }
+
+  // Resolve a cell to { display, num, wallOI, wallPct }. Prefers the new scraper
+  // fields; for old frames it splits the concatenated badge blob (e.g.
+  // "532K0.00%0" -> wall "532K 0.00%", value "0") so nothing shows the blob.
+  function parseCell(cell) {
+    let text = (cell.text ?? "").trim();
+    let wallOI = cell.wallOI ?? null;
+    let wallPct = cell.wallPct ?? null;
+    if (wallOI == null && wallPct == null) {
+      const m = text.match(/^([\d.,]+[KMB]?)(-?\d+(?:\.\d+)?%)(.*)$/);
+      if (m) { wallOI = m[1]; wallPct = m[2]; text = m[3].trim(); }
+    }
+    return { display: text, num: parseCellValue(text), wallOI, wallPct };
   }
 
   function fmtCompact(v) {
@@ -78,9 +92,12 @@
   // luminance so numbers stay readable on both bright and dark cells.
   function styleFor(value) {
     if (!value) return { bg: "rgb(24, 30, 38)", fg: "#5f656e" };
+    // Square-root scale (not log): log over-compressed the mid range so a 14M
+    // cell looked almost as hot as a 110M one. sqrt spreads the big values —
+    // low-mid stays blue-green, only the frame's largest reaches yellow.
     let t = value > 0
-      ? Math.log1p(value) / state.logPos
-      : -Math.log1p(-value) / state.logNeg;
+      ? Math.sqrt(value / state.posMax)
+      : -Math.sqrt(-value / state.negMax);
     t = Math.max(-1, Math.min(1, t));
     let r = 28, g = 45, b = 60;
     for (let i = 0; i < STOPS.length - 1; i++) {
@@ -273,8 +290,8 @@
       if (v < vmin) vmin = v;
       if (v > vmax) vmax = v;
     }));
-    state.logPos = Math.log1p(Math.max(vmax, 1));
-    state.logNeg = Math.log1p(Math.max(-vmin, 1));
+    state.posMax = Math.max(vmax, 1);
+    state.negMax = Math.max(-vmin, 1);
     els.legMin.textContent = fmtCompact(vmin);
     els.legMax.textContent = "+" + fmtCompact(vmax);
 
@@ -289,8 +306,9 @@
       (row.values || []).forEach((cell, c) => {
         const td = rowCells[c];
         if (!td) return;
-        const text = cell.text ?? "";
-        const num = parseCellValue(text);
+        const parsed = parseCell(cell);
+        const text = parsed.display;
+        const num = parsed.num;
         const wallEl = td.firstChild, valEl = td.lastChild;
         valEl.textContent = text;
         const { bg, fg } = styleFor(num);
@@ -298,8 +316,8 @@
         td.style.color = fg;
         td.classList.toggle("zero", !num);
 
-        // wall-alert badge (new scraper field; absent on old frames)
-        const wallText = [cell.wallOI, cell.wallPct].filter(Boolean).join(" ");
+        // wall-alert badge (new scraper fields, or split from an old blob)
+        const wallText = [parsed.wallOI, parsed.wallPct].filter(Boolean).join(" ");
         if (wallText) {
           wallEl.hidden = false;
           wallEl.textContent = wallText;

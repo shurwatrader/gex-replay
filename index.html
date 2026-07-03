@@ -22,6 +22,7 @@
       </label>
     </div>
     <div class="clocks" id="clocks">
+      <span class="clocks-label">SNAPSHOT<br>CAPTURED</span>
       <div class="clock"><span class="tz" id="tzET">ET</span><span id="clkET" class="clk">—</span></div>
       <div class="clock"><span class="tz" id="tzCT">CT</span><span id="clkCT" class="clk">—</span></div>
       <div class="clock"><span class="tz" id="tzPT">PT</span><span id="clkPT" class="clk">—</span></div>
@@ -51,9 +52,11 @@
       <button id="nextBtn" title="Next frame (→)">▶</button>
       <button id="lastBtn" title="Last frame (End)">⏭</button>
     </div>
-    <input id="scrubber" class="scrubber" type="range" min="0" max="0" value="0" step="1" />
-    <div class="ctl-right">
+    <div class="ctl-timeline">
+      <input id="scrubber" class="scrubber" type="range" min="0" max="0" value="0" step="1" />
       <span id="frameLabel" class="frame-label">— / —</span>
+    </div>
+    <div class="ctl-right">
       <label class="speed">Speed
         <select id="speedSelect">
           <option value="0.5">0.5×</option>
