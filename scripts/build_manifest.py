@@ -116,6 +116,9 @@ def main():
                 continue
 
             frames = [build_frame(jf) for jf in json_files]
+            # ET filenames wrap past midnight inside one trading day, so order
+            # by capturedAt (UTC) to keep the replay chronological.
+            frames.sort(key=lambda fr: fr.get("capturedAt") or "")
 
             bundle_rel = f"data/{slug}/{date}.json"
             with open(out / bundle_rel, "w", encoding="utf-8") as f:

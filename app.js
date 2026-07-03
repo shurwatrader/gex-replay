@@ -1,7 +1,7 @@
 /* GEX Replay — interactive frame-by-frame heatmap player.
-   The grid is built from the UNION of expiries/strikes across the whole day and
-   each frame's values are mapped by expiry name, so frames captured after an
-   expiry rolls off the board still line up under the right date headers. */
+   The grid is built from the UNION of expiries/strikes across all loaded frames
+   and each frame's values map by expiry name, so a date range (or a day where
+   an expiry rolls off the board) still lines up under the right headers. */
 (() => {
   "use strict";
 
@@ -9,7 +9,8 @@
   const els = {
     title: $("title"),
     seriesSelect: $("seriesSelect"),
-    dateSelect: $("dateSelect"),
+    datePick: $("datePick"),
+    datePickEnd: $("datePickEnd"),
     clkET: $("clkET"), clkCT: $("clkCT"), clkPT: $("clkPT"),
     tzET: $("tzET"), tzCT: $("tzCT"), tzPT: $("tzPT"),
     grid: $("grid"),
@@ -30,19 +31,19 @@
   const state = {
     manifest: null,
     series: null,
-    bundle: null,
+    frames: [],
     frameIndex: 0,
     playing: false,
     timer: null,
-    expiries: [],   // union across the day, chronological
-    strikes: [],    // union across the day, descending
-    cellEls: [],    // [strikeIdx][expiryIdx] -> { td, wall, starOi, starVol, delta, val }
-    strikeEls: [],  // per-row strike <td>
-    rowEls: [],     // per-row <tr>
+    expiries: [],   // union across loaded frames, chronological
+    strikes: [],    // union across loaded frames, descending
+    cellEls: [],
+    strikeEls: [],
+    wallColEls: [],
+    rowEls: [],
     priceRowEl: null,
-    callWallEl: null, putWallEl: null,   // strike <td>s holding wall chips
-    posMax: 1,  // color scale anchors, recomputed per frame:
-    negMax: 1,  // purple = frame min, yellow = frame max
+    callWall: null, putWall: null,   // row indices of the wall rows
+    posMax: 1, negMax: 1,            // color scale anchors, per frame
   };
 
   // ---------- number parsing ----------
@@ -58,18 +59,14 @@
     return parseFloat(m[1]) * mult;
   }
 
-  // Resolve a cell to { display, num, wallOI, wallPct }. Prefers the new scraper
-  // fields; for old frames it splits the concatenated badge blob (e.g.
-  // "532K0.00%0" -> wall "532K 0.00%", value "0") so nothing shows the blob.
+  // Prefer new scraper fields; split the old "532K0.00%0" blob for legacy frames.
   function parseCell(cell) {
     let text = (cell.text ?? "").trim();
-    let wallOI = cell.wallOI ?? null;
-    let wallPct = cell.wallPct ?? null;
-    if (wallOI == null && wallPct == null) {
+    if (cell.wallOI == null && cell.wallPct == null) {
       const m = text.match(/^([\d.,]+[KMB]?)(-?\d+(?:\.\d+)?%)(.*)$/);
-      if (m) { wallOI = m[1]; wallPct = m[2]; text = m[3].trim(); }
+      if (m) text = m[3].trim();
     }
-    return { display: text, num: parseCellValue(text), wallOI, wallPct };
+    return { display: text, num: parseCellValue(text) };
   }
 
   function fmtCompact(v) {
@@ -90,11 +87,9 @@
     [0.5, 38, 152, 134],
     [1.0, 245, 215, 60],
   ];
-  // { bg, fg } — fg picked dark or light by the background's luminance.
+  // { bg, fg, shadow } — fg + a matching outline keep the value legible on any cell.
   function styleFor(value) {
-    if (!value) return { bg: "rgb(24, 30, 38)", fg: "#5f656e" };
-    // Square-root scale: log over-compressed the mid range. sqrt keeps low-mid
-    // values blue-green; only the frame's largest values reach yellow.
+    if (!value) return { bg: "rgb(24, 30, 38)", fg: "#5f656e", shadow: "none" };
     let t = value > 0
       ? Math.sqrt(value / state.posMax)
       : -Math.sqrt(-value / state.negMax);
@@ -112,15 +107,16 @@
       }
     }
     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-    return { bg: `rgb(${r},${g},${b})`, fg: lum > 150 ? "#0a0d11" : "#ffffff" };
+    const light = lum <= 150;
+    return {
+      bg: `rgb(${r},${g},${b})`,
+      fg: light ? "#ffffff" : "#0a0d11",
+      shadow: light ? "0 1px 2px rgba(0,0,0,.8)" : "0 1px 1px rgba(255,255,255,.45)",
+    };
   }
 
   // ---------- timezone clocks ----------
-  const TZ = {
-    ET: "America/New_York",
-    CT: "America/Chicago",
-    PT: "America/Los_Angeles",
-  };
+  const TZ = { ET: "America/New_York", CT: "America/Chicago", PT: "America/Los_Angeles" };
   function zoneParts(date, tz) {
     const fmt = new Intl.DateTimeFormat("en-US", {
       timeZone: tz, hour: "numeric", minute: "2-digit", second: "2-digit",
@@ -128,8 +124,7 @@
     });
     const parts = fmt.formatToParts(date);
     const get = (t) => (parts.find((p) => p.type === t) || {}).value || "";
-    const time = `${get("hour")}:${get("minute")}:${get("second")} ${get("dayPeriod")}`;
-    return { time, abbr: get("timeZoneName") };
+    return { time: `${get("hour")}:${get("minute")}:${get("second")} ${get("dayPeriod")}`, abbr: get("timeZoneName") };
   }
   function updateClocks(capturedAt) {
     const d = capturedAt ? new Date(capturedAt) : null;
@@ -165,27 +160,41 @@
   function selectSeries(i) {
     state.series = state.manifest.series[i];
     els.title.textContent = state.series.title;
-    const dates = state.series.dates || [];
-    els.dateSelect.innerHTML = dates.map((d, j) => `<option value="${j}">${d.date} · ${d.frames} frames</option>`).join("");
-    els.dateSelect.onchange = () => selectDate(+els.dateSelect.value);
-    els.dateSelect.value = String(dates.length - 1);
-    selectDate(dates.length - 1);
+    const dates = (state.series.dates || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    state.series.dates = dates;
+    if (!dates.length) { showEmpty("This series has no dates."); return; }
+    const min = dates[0].date, max = dates[dates.length - 1].date;
+    els.datePick.min = els.datePickEnd.min = min;
+    els.datePick.max = els.datePickEnd.max = max;
+    els.datePick.value = max;
+    els.datePickEnd.value = "";
+    loadRange();
   }
 
-  async function selectDate(j) {
+  async function loadRange() {
     stop();
-    const meta = state.series.dates[j];
-    try {
-      const res = await fetch(meta.file, { cache: "no-store" });
-      if (!res.ok) throw new Error(res.status);
-      state.bundle = await res.json();
-    } catch (e) {
-      showEmpty(`Could not load ${meta.file}.`);
+    const start = els.datePick.value;
+    let end = els.datePickEnd.value || start;
+    if (end < start) { end = start; els.datePickEnd.value = ""; }
+    const inRange = state.series.dates.filter((d) => d.date >= start && d.date <= end);
+    if (!inRange.length) {
+      state.frames = [];
+      showEmpty(`No data for ${start}${end !== start ? " … " + end : ""}.`);
       return;
     }
+    const bundles = await Promise.all(inRange.map(async (d) => {
+      try { const r = await fetch(d.file, { cache: "no-store" }); if (!r.ok) throw 0; return await r.json(); }
+      catch { return null; }
+    }));
+    const frames = [];
+    bundles.filter(Boolean).forEach((b) => frames.push(...(b.frames || [])));
+    frames.sort((a, b) => (a.capturedAt || "").localeCompare(b.capturedAt || ""));
+    if (!frames.length) { state.frames = []; showEmpty("No frames in that range."); return; }
+
+    state.frames = frames;
     els.empty.hidden = true;
-    buildGrid(state.bundle.frames);
-    els.scrubber.max = String(Math.max(0, state.bundle.frames.length - 1));
+    buildGrid(frames);
+    els.scrubber.max = String(Math.max(0, frames.length - 1));
     state.frameIndex = 0;
     els.scrubber.value = "0";
     showFrame(0);
@@ -198,18 +207,14 @@
     els.grid.innerHTML = "";
   }
 
-  // ---------- grid construction (once per date) ----------
+  // ---------- grid construction ----------
   function expiryDate(e) {
-    // "07-06-2026" -> sortable timestamp
     const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(e);
     return m ? new Date(`${m[3]}-${m[1]}-${m[2]}`).getTime() : 0;
   }
 
   function buildGrid(frames) {
-    if (!frames.length) { showEmpty("This day has no frames."); return; }
-
-    // Union of expiries and strikes across every frame of the day, so late
-    // frames (after an expiry drops off the board) still map correctly.
+    if (!frames.length) { showEmpty("No frames."); return; }
     const expirySet = new Set(), strikeSet = new Set();
     frames.forEach((f) => {
       (f.expiries || []).forEach((e) => expirySet.add(e));
@@ -226,7 +231,7 @@
     htr.appendChild(strikeHead);
     const wallHead = document.createElement("th");
     wallHead.className = "wall-col";
-    wallHead.textContent = "TOP VOL";
+    wallHead.textContent = "WALL";
     htr.appendChild(wallHead);
     state.headerEls = [];
     state.expiries.forEach((e) => {
@@ -251,7 +256,7 @@
       state.strikeEls.push(stTd);
       state.rowEls.push(tr);
 
-      // wall-alert gutter — badges live here, not on top of the data cells
+      // wall gutter — holds a Call/Put Wall badge on the wall strikes
       const wallTd = document.createElement("td");
       wallTd.className = "wall-col";
       const wallPill = document.createElement("span");
@@ -264,7 +269,6 @@
       state.expiries.forEach(() => {
         const td = document.createElement("td");
         td.className = "cell";
-        // flex layout inside the cell: [stars][delta chip] ......... [value]
         const cw = document.createElement("div");
         cw.className = "cw";
         const starOi = document.createElement("span");
@@ -288,12 +292,10 @@
     els.grid.appendChild(thead);
     els.grid.appendChild(tbody);
     state.priceRowEl = null;
-    state.callWallEl = null;
-    state.putWallEl = null;
+    state.callWall = state.putWall = null;
   }
 
   // ---------- per-frame render ----------
-  // Map a frame to { "strike|expiry": parsedCell }
   function frameMap(frame) {
     const map = new Map();
     if (!frame) return map;
@@ -301,14 +303,14 @@
     (frame.rows || []).forEach((row) => {
       (row.values || []).forEach((cell, c) => {
         const exp = exps[c];
-        if (exp != null) map.set(row.strike + "|" + exp, parseCell(cell));
+        if (exp != null) map.set(row.strike + "|" + exp, { cell, parsed: parseCell(cell) });
       });
     });
     return map;
   }
 
   function showFrame(idx) {
-    const frames = state.bundle.frames;
+    const frames = state.frames;
     if (!frames || !frames.length) return;
     idx = Math.max(0, Math.min(frames.length - 1, idx));
     state.frameIndex = idx;
@@ -316,33 +318,31 @@
     const cur = frameMap(frame);
     const prev = idx > 0 ? frameMap(frames[idx - 1]) : new Map();
 
-    // Per-frame color scale anchored to this frame's actual extremes.
     let vmin = 0, vmax = 0;
-    cur.forEach((p) => {
-      if (p.num < vmin) vmin = p.num;
-      if (p.num > vmax) vmax = p.num;
+    cur.forEach(({ parsed }) => {
+      if (parsed.num < vmin) vmin = parsed.num;
+      if (parsed.num > vmax) vmax = parsed.num;
     });
     state.posMax = Math.max(vmax, 1);
     state.negMax = Math.max(-vmin, 1);
     els.legMin.textContent = fmtCompact(vmin);
     els.legMax.textContent = "+" + fmtCompact(vmax);
 
-    // Movers: top 6 |delta| vs previous frame (keyed strike|expiry).
+    // movers: top 6 |delta| vs previous frame
     const moverMap = new Map();
     if (els.moversToggle.checked && prev.size) {
       const deltas = [];
-      cur.forEach((p, key) => {
+      cur.forEach(({ parsed }, key) => {
         const pp = prev.get(key);
         if (!pp) return;
-        const d = p.num - pp.num;
+        const d = parsed.num - pp.parsed.num;
         if (d !== 0) deltas.push([Math.abs(d), key, d]);
       });
       deltas.sort((a, b) => b[0] - a[0]);
       deltas.slice(0, 6).forEach(([, key, d]) => moverMap.set(key, d));
     }
 
-    // Drop expiry columns that aren't on the board in this frame (e.g. already
-    // expired) instead of showing a blank column.
+    // drop expiry columns not on the board this frame
     const present = new Set(frame.expiries || []);
     state.expiries.forEach((exp, c) => {
       const show = present.has(exp) ? "" : "none";
@@ -350,46 +350,38 @@
       state.cellEls.forEach((rowCells) => { rowCells[c].td.style.display = show; });
     });
 
-    // Row totals for call/put wall detection.
     const rowSum = new Map();
-    const price = frame.price != null ? Number(frame.price) : null;
 
     state.strikes.forEach((strike, r) => {
-      const rowWalls = [];
       state.expiries.forEach((exp, c) => {
         const key = strike + "|" + exp;
         const el = state.cellEls[r][c];
-        const p = cur.get(key);
+        const entry = cur.get(key);
 
-        if (!p) {
+        if (!entry) {
           el.td.className = "cell absent";
           el.td.style.background = "";
           el.td.style.color = "";
           el.val.textContent = "";
+          el.val.style.textShadow = "none";
           el.starOi.hidden = el.starVol.hidden = el.delta.hidden = true;
           el.td.title = "";
           delete el.td.dataset.dir;
           return;
         }
-        rowSum.set(strike, (rowSum.get(strike) || 0) + p.num);
+        const { cell, parsed } = entry;
+        rowSum.set(strike, (rowSum.get(strike) || 0) + parsed.num);
 
-        el.td.className = "cell" + (p.num ? "" : " zero");
-        el.val.textContent = p.display;
-        const { bg, fg } = styleFor(p.num);
+        el.td.className = "cell" + (parsed.num ? "" : " zero");
+        el.val.textContent = parsed.display;
+        const { bg, fg, shadow } = styleFor(parsed.num);
         el.td.style.background = bg;
         el.td.style.color = fg;
+        el.val.style.textShadow = shadow;
 
-        const raw = frameCell(frame, strike, exp);
-        if (p.wallOI || p.wallPct) {
-          rowWalls.push({ exp, wallOI: p.wallOI, wallPct: p.wallPct,
-                          wallType: raw && raw.wallType });
-        }
+        el.starOi.hidden = !cell.oiKing;
+        el.starVol.hidden = !cell.volKing;
 
-        // king stars
-        el.starOi.hidden = !(raw && raw.oiKing);
-        el.starVol.hidden = !(raw && raw.volKing);
-
-        // mover delta chip (green up / red down)
         const d = moverMap.get(key);
         if (d != null) {
           el.td.classList.add("mover");
@@ -402,38 +394,16 @@
           delete el.td.dataset.dir;
         }
 
-        // tooltip
-        let tip = `${exp} · ${strike}\n${p.display || "0"}`;
+        let tip = `${exp} · ${strike}\n${parsed.display || "0"}`;
         const pp = prev.get(key);
         if (pp) {
-          const dd = p.num - pp.num;
+          const dd = parsed.num - pp.parsed.num;
           tip += `\nΔ ${dd >= 0 ? "+" : ""}${fmtCompact(dd)} vs prev`;
         }
-        if (raw && raw.oiKing) tip += `\n★ GEX OI king`;
-        if (raw && raw.volKing) tip += `\n★ GEX Vol king`;
+        if (cell.oiKing) tip += `\n★ GEX OI king`;
+        if (cell.volKing) tip += `\n★ GEX Vol king`;
         el.td.title = tip;
       });
-
-      // wall-alert gutter for this strike
-      const g = state.wallColEls[r];
-      if (rowWalls.length) {
-        const w = rowWalls[0];
-        g.pill.hidden = false;
-        g.pill.textContent = [w.wallOI, w.wallPct].filter(Boolean).join(" ");
-        // side: scraper's wallType when available, else derived from spot
-        g.td.title = rowWalls.map((x) => {
-          let side = x.wallType
-            ? String(x.wallType).replace(/[-_]/g, " ")
-            : (price != null ? (strike >= price ? "call top volume" : "put top volume") : "top volume");
-          return `${side} — ${[x.wallOI, x.wallPct].filter(Boolean).join(" ")} (${x.exp})`;
-        }).join("\n");
-        g.td.classList.toggle("side-call", price != null && strike >= price);
-        g.td.classList.toggle("side-put", price != null && strike < price);
-      } else {
-        g.pill.hidden = true;
-        g.td.title = "";
-        g.td.classList.remove("side-call", "side-put");
-      }
     });
 
     markPriceRow(frame);
@@ -443,19 +413,9 @@
     els.frameLabel.textContent = `${idx + 1} / ${frames.length}`;
   }
 
-  // raw cell object (for star flags) by strike + expiry name
-  function frameCell(frame, strike, exp) {
-    const c = (frame.expiries || []).indexOf(exp);
-    if (c < 0) return null;
-    const row = (frame.rows || []).find((r) => r.strike === strike);
-    return row ? (row.values || [])[c] : null;
-  }
-
   function markPriceRow(frame) {
     if (state.priceRowEl) {
       state.priceRowEl.classList.remove("price-row");
-      const wc = state.priceRowEl.querySelector("td.wall-col");
-      if (wc) delete wc.dataset.spot;
       state.priceRowEl = null;
     }
     if (frame.price == null) return;
@@ -465,24 +425,21 @@
       if (d < bestD) { bestD = d; bestR = r; }
     });
     if (bestR < 0) return;
-    const tr = state.rowEls[bestR];
-    tr.classList.add("price-row");
-    state.wallColEls[bestR].td.dataset.spot = "$" + Number(frame.price).toFixed(2);
-    state.priceRowEl = tr;
+    state.rowEls[bestR].classList.add("price-row");
+    state.priceRowEl = state.rowEls[bestR];
   }
 
   // Call wall = strike with the largest positive total GEX across expiries;
-  // put wall = most negative. Marked with a chip + dashed row line, like the
-  // source terminal.
+  // put wall = most negative. Badge lives in the gutter; a dashed line marks
+  // the row (below the call wall, above the put wall).
   function markWalls(rowSum) {
-    [["call", state.callWallEl], ["put", state.putWallEl]].forEach(([kind, el]) => {
-      if (el) {
-        el.parentElement.classList.remove(kind + "-wall");
-        const chip = el.querySelector(".wallchip");
-        if (chip) chip.remove();
-      }
+    [state.callWall, state.putWall].forEach((r) => {
+      if (r == null) return;
+      state.rowEls[r].classList.remove("call-wall", "put-wall");
+      const g = state.wallColEls[r];
+      g.pill.hidden = true; g.pill.className = "wall";
     });
-    state.callWallEl = state.putWallEl = null;
+    state.callWall = state.putWall = null;
 
     let callStrike = null, callV = 0, putStrike = null, putV = 0;
     rowSum.forEach((v, s) => {
@@ -490,22 +447,21 @@
       if (v < putV) { putV = v; putStrike = s; }
     });
 
-    [["call", callStrike, "Call Wall"], ["put", putStrike, "Put Wall"]].forEach(([kind, strike, label]) => {
+    const set = (strike, kind, label) => {
       if (strike == null) return;
       const r = state.strikes.indexOf(strike);
       if (r < 0) return;
-      const tr = state.rowEls[r];
-      tr.classList.add(kind + "-wall");
-      const chip = document.createElement("span");
-      chip.className = "wallchip " + kind;
-      chip.textContent = label;
-      state.wallColEls[r].td.appendChild(chip);
-      if (kind === "call") state.callWallEl = state.wallColEls[r].td;
-      else state.putWallEl = state.wallColEls[r].td;
-    });
+      state.rowEls[r].classList.add(kind + "-wall");
+      const g = state.wallColEls[r];
+      g.pill.hidden = false;
+      g.pill.textContent = label;
+      g.pill.className = "wall " + kind;
+      if (kind === "call") state.callWall = r; else state.putWall = r;
+    };
+    set(callStrike, "call", "Call Wall");
+    set(putStrike, "put", "Put Wall");
   }
 
-  // Center the spot-price row in view (once per date load).
   function scrollToSpot() {
     const tr = state.priceRowEl;
     if (!tr) return;
@@ -516,7 +472,7 @@
   // ---------- playback ----------
   function fps() { return 2 * parseFloat(els.speedSelect.value); }
   function play() {
-    if (!state.bundle || state.bundle.frames.length < 2) return;
+    if (!state.frames || state.frames.length < 2) return;
     state.playing = true;
     els.playBtn.textContent = "⏸";
     els.playBtn.classList.add("playing");
@@ -527,7 +483,7 @@
     state.timer = setTimeout(() => {
       if (!state.playing) return;
       let next = state.frameIndex + 1;
-      if (next >= state.bundle.frames.length) next = 0;
+      if (next >= state.frames.length) next = 0;
       showFrame(next);
       scheduleTick();
     }, 1000 / fps());
@@ -545,18 +501,20 @@
   els.nextBtn.onclick = () => { stop(); showFrame(state.frameIndex + 1); };
   els.prevBtn.onclick = () => { stop(); showFrame(state.frameIndex - 1); };
   els.firstBtn.onclick = () => { stop(); showFrame(0); };
-  els.lastBtn.onclick = () => { stop(); showFrame(state.bundle.frames.length - 1); };
+  els.lastBtn.onclick = () => { stop(); showFrame(state.frames.length - 1); };
   els.scrubber.oninput = () => { stop(); showFrame(+els.scrubber.value); };
   els.speedSelect.onchange = () => { if (state.playing) scheduleTick(); };
   els.moversToggle.onchange = () => showFrame(state.frameIndex);
+  els.datePick.onchange = loadRange;
+  els.datePickEnd.onchange = loadRange;
 
   document.addEventListener("keydown", (e) => {
-    if (e.target.tagName === "SELECT") return;
+    if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }
     else if (e.code === "ArrowRight") { stop(); showFrame(state.frameIndex + 1); }
     else if (e.code === "ArrowLeft") { stop(); showFrame(state.frameIndex - 1); }
     else if (e.code === "Home") { stop(); showFrame(0); }
-    else if (e.code === "End") { stop(); showFrame(state.bundle.frames.length - 1); }
+    else if (e.code === "End") { stop(); showFrame(state.frames.length - 1); }
   });
 
   loadManifest();

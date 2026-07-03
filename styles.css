@@ -60,6 +60,13 @@ select {
   padding: 4px 8px; font-family: inherit; font-size: 12px; text-transform: none; letter-spacing: 0;
 }
 select:focus { outline: 1px solid var(--accent); }
+input[type="date"] {
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--grid-line); border-radius: 4px;
+  padding: 3px 6px; font-family: inherit; font-size: 12px; color-scheme: dark;
+}
+input[type="date"]:focus { outline: 1px solid var(--accent); }
+.range-end { color: var(--text-faint); }
 
 /* capture-time clocks in three US market zones */
 .clocks { display: flex; align-items: center; gap: 18px; margin-left: auto; }
@@ -119,19 +126,15 @@ select:focus { outline: 1px solid var(--accent); }
 .grid td.cell .cw .val { margin-left: auto; white-space: nowrap; }
 .grid td.cell .cw [hidden] { display: none; }
 
-/* spot-price row — bright cyan strike chip + floating price pill, easy to find */
+/* spot-price row — just a bright cyan strike chip (no redundant price text) */
 .grid tr.price-row td.strike-col {
   background: var(--accent); color: #04121a; font-weight: 800;
 }
-.grid tr.price-row td.wall-col::after {
-  content: attr(data-spot);
-  position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%);
-  background: var(--accent); color: #04121a; font-size: 10px; font-weight: 700;
-  padding: 1px 6px; border-radius: 3px; white-space: nowrap; z-index: 6; pointer-events: none;
-}
 
-/* movers: color says direction — green ring/chip = up, red = down */
-.grid td.cell.mover { font-weight: 700; }
+/* movers: color says direction — green ring/chip = up, red = down. The value
+   itself stays bold + shadowed (set inline) for legibility over the fill. */
+.grid td.cell .val { font-weight: 600; }
+.grid td.cell.mover .val { font-weight: 800; }
 .grid td.cell.mover[data-dir="up"] {
   outline: 2px solid #22e07a; outline-offset: -2px;
   box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.55);
@@ -141,29 +144,12 @@ select:focus { outline: 1px solid var(--accent); }
   box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.55);
 }
 .grid td.cell .delta {
-  flex: 0 0 auto; font-size: 9px; font-weight: 700; letter-spacing: 0;
-  height: 14px; line-height: 14px; padding: 0 5px; border-radius: 7px; white-space: nowrap;
+  flex: 0 0 auto; font-size: 9px; font-weight: 800; letter-spacing: .02em;
+  height: 15px; line-height: 15px; padding: 0 5px; border-radius: 7px; white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
-.grid td.cell .delta.up { background: #16c268; color: #03130a; }
-.grid td.cell .delta.down { background: #e0344c; color: #fff; }
-
-/* top-volume badge in the gutter — green pill = call top volume, red = put
-   top volume (matches the source terminal's bubbles) */
-.grid td.wall-col .wall {
-  display: inline-flex; align-items: center;
-  font-size: 9px; height: 14px; line-height: 14px; padding: 0 6px;
-  border-radius: 7px; white-space: nowrap;
-  background: rgba(0, 0, 0, 0.5); color: #e6eaf1;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-}
-.grid td.wall-col .wall[hidden] { display: none; }
-.grid td.wall-col.side-call .wall {
-  background: rgba(4, 34, 20, 0.85); color: #7dffb8;
-  border-color: rgba(34, 224, 122, 0.65);
-}
-.grid td.wall-col.side-put .wall {
-  background: #b8222f; color: #fff; border-color: #d8404c;
-}
+.grid td.cell .delta.up { background: #19d873; color: #052b16; }
+.grid td.cell .delta.down { background: #ff3d54; color: #fff; }
 
 /* king stars — green = GEX OI king, red = Vol king; dark disc so they pop */
 .grid td.cell .star {
@@ -174,18 +160,20 @@ select:focus { outline: 1px solid var(--accent); }
 .grid td.cell .star.oi { color: #00ea75; }
 .grid td.cell .star.vol { color: #ff3b3b; }
 
-/* call/put wall rows — dashed line across + a labeled chip by the strike */
-.grid tr.call-wall td { border-bottom: 2px dashed rgba(255, 214, 0, 0.6); }
-.grid tr.put-wall td { border-bottom: 2px dashed rgba(255, 77, 94, 0.65); }
-.wallchip {
-  position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%);
-  font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 3px;
-  white-space: nowrap; z-index: 5; pointer-events: none; text-transform: uppercase;
+/* wall badge lives in the gutter — Call Wall (green) / Put Wall (red) */
+.grid td.wall-col .wall {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; height: 15px; line-height: 15px; padding: 0 6px;
+  border-radius: 7px; white-space: nowrap; letter-spacing: .02em;
 }
-.wallchip.call { background: #0f9d58; color: #eafff3; }
-.wallchip.put { background: #d32f4b; color: #fff; }
-/* if the spot pill occupies the same row, shift the wall chip right of it */
-tr.price-row .wallchip { left: calc(100% + 64px); }
+.grid td.wall-col .wall[hidden] { display: none; }
+.grid td.wall-col .wall.call { background: #0f9d58; color: #eafff3; }
+.grid td.wall-col .wall.put { background: #d32f4b; color: #fff; }
+
+/* wall rows — dashed line across the data: below the call wall (resistance),
+   above the put wall (support) */
+.grid tr.call-wall td.cell { border-bottom: 2px dashed rgba(34, 224, 122, 0.7); }
+.grid tr.put-wall td.cell { border-top: 2px dashed rgba(255, 77, 94, 0.75); }
 
 .empty {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -245,25 +233,18 @@ tr.price-row .wallchip { left: calc(100% + 64px); }
 @media (max-width: 600px) {
   .topbar { gap: 8px; padding: 8px 10px; }
   .brand { font-size: 13px; }
-  /* stack Series/Date so the Date dropdown can't get clipped off-screen */
+  /* stack Series/Date so the Date picker can't get clipped off-screen */
   .topbar-selects { flex: 1 1 100%; flex-direction: column; align-items: stretch; gap: 6px; }
   .topbar-selects label { justify-content: space-between; }
-  .topbar-selects select { flex: 1; min-width: 0; margin-left: 8px; }
+  .topbar-selects select, .topbar-selects input[type="date"] { flex: 1; min-width: 0; margin-left: 8px; }
   .clocks { gap: 10px; }
   .clocks-label { font-size: 8px; }
   .clock .clk { font-size: 12px; }
   .grid { font-size: 11px; }
   .grid td.cell { min-width: 62px; padding: 0 5px; }
   .grid th.strike-col, .grid td.strike-col { width: 46px; min-width: 46px; max-width: 46px; padding: 0 4px; }
-  .grid th.wall-col, .grid td.wall-col { left: 46px; width: 62px; min-width: 62px; max-width: 62px; padding: 0 2px; }
+  .grid th.wall-col, .grid td.wall-col { left: 46px; width: 66px; min-width: 66px; max-width: 66px; padding: 0 2px; }
   .grid td.wall-col .wall { font-size: 8px; padding: 0 4px; }
-  /* compact wall chips on mobile so they don't cover cell values */
-  .wallchip { font-size: 0; padding: 2px 4px; }
-  .wallchip::after { font-size: 8px; font-weight: 700; line-height: 1; }
-  .wallchip.call::after { content: "CW"; }
-  .wallchip.put::after { content: "PW"; }
-  .grid tr.price-row td.wall-col::after { font-size: 9px; padding: 1px 4px; }
-  tr.price-row .wallchip { left: calc(100% + 56px); }
   .legend { padding: 5px 8px; gap: 5px; }
   .leg-val { min-width: 42px; font-size: 10px; }
   .controls { gap: 8px; padding: 8px 10px; }
