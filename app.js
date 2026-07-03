@@ -37,8 +37,8 @@
     cellEls: [],
     strikeEls: [],
     priceRowEl: null,
-    scaleMax: 1,       // color scale anchor (|value| percentile across the day)
-    logMax: Math.log1p(1),
+    logPos: Math.log1p(1),  // color scale anchors, recomputed per frame:
+    logNeg: Math.log1p(1),  // purple = frame min, yellow = frame max
     expiries: [],
   };
 
@@ -76,10 +76,12 @@
   ];
   function colorFor(value) {
     if (!value) return "rgb(24, 30, 38)"; // zero / empty → near-background
-    // signed-log: values span ~5 orders of magnitude (K walls up to hundreds of
-    // M), so a linear scale would crush everything but the walls to the center
-    // color. Log keeps mid-range cells visibly separated.
-    let t = Math.sign(value) * Math.log1p(Math.abs(value)) / state.logMax;
+    // Two-sided signed-log: positives scale toward yellow against the frame's
+    // max, negatives toward purple against the frame's min. Log (not linear)
+    // keeps mid-range cells separated when values span orders of magnitude.
+    let t = value > 0
+      ? Math.log1p(value) / state.logPos
+      : -Math.log1p(-value) / state.logNeg;
     t = Math.max(-1, Math.min(1, t));
     for (let i = 0; i < STOPS.length - 1; i++) {
       const [t0, r0, g0, b0] = STOPS[i];
@@ -92,22 +94,6 @@
     return "rgb(24, 30, 38)";
   }
 
-  // Robust scale max: ~98th percentile of |value| across the whole day, so a
-  // single outlier doesn't wash out the gradient and colors are stable across
-  // frames (no flicker during playback).
-  function computeScale(frames) {
-    const mags = [];
-    frames.forEach((f) => (f.rows || []).forEach((row) =>
-      (row.values || []).forEach((c) => {
-        const v = Math.abs(parseCellValue(c.text));
-        if (v > 0) mags.push(v);
-      })));
-    if (!mags.length) return 1;
-    mags.sort((a, b) => a - b);
-    const p = mags[Math.floor(mags.length * 0.98)] || mags[mags.length - 1];
-    return p || 1;
-  }
-
   // ---------- timezone clocks ----------
   const TZ = {
     ET: "America/New_York",
@@ -116,13 +102,12 @@
   };
   function zoneParts(date, tz) {
     const fmt = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz, hour: "2-digit", minute: "2-digit", second: "2-digit",
-      hour12: false, timeZoneName: "short",
+      timeZone: tz, hour: "numeric", minute: "2-digit", second: "2-digit",
+      hour12: true, timeZoneName: "short",
     });
     const parts = fmt.formatToParts(date);
     const get = (t) => (parts.find((p) => p.type === t) || {}).value || "";
-    let hh = get("hour"); if (hh === "24") hh = "00";
-    const time = `${hh}:${get("minute")}:${get("second")}`;
+    const time = `${get("hour")}:${get("minute")}:${get("second")} ${get("dayPeriod")}`;
     return { time, abbr: get("timeZoneName") };
   }
   function updateClocks(capturedAt) {
@@ -178,10 +163,6 @@
       return;
     }
     els.empty.hidden = true;
-    state.scaleMax = computeScale(state.bundle.frames);
-    state.logMax = Math.log1p(state.scaleMax);
-    els.legMin.textContent = "-" + fmtCompact(state.scaleMax);
-    els.legMax.textContent = "+" + fmtCompact(state.scaleMax);
     buildGrid(state.bundle.frames);
     els.scrubber.max = String(Math.max(0, state.bundle.frames.length - 1));
     state.frameIndex = 0;
@@ -272,6 +253,19 @@
     const frame = frames[idx];
     const prevFrame = idx > 0 ? frames[idx - 1] : null;
     const movers = els.moversToggle.checked ? computeMovers(frame, prevFrame) : new Set();
+
+    // Per-frame color scale: anchor the palette to this frame's actual extremes
+    // so the legend's ends equal the lowest/highest GEX numbers on screen.
+    let vmin = 0, vmax = 0;
+    (frame.rows || []).forEach((row) => (row.values || []).forEach((c) => {
+      const v = parseCellValue(c.text);
+      if (v < vmin) vmin = v;
+      if (v > vmax) vmax = v;
+    }));
+    state.logPos = Math.log1p(Math.max(vmax, 1));
+    state.logNeg = Math.log1p(Math.max(-vmin, 1));
+    els.legMin.textContent = fmtCompact(vmin);
+    els.legMax.textContent = "+" + fmtCompact(vmax);
 
     // prev-frame lookup for per-cell delta tooltips
     const prevMap = new Map();
