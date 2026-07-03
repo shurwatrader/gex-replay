@@ -24,7 +24,7 @@ git add -A && git commit -m "Update snapshots"
 git push
 ```
 
-By default the build reads from `C:/Users/jalee/gex_snapshots`; override with
+By default the build reads from `C:/Users/username/gex_snapshots`; override with
 `--source <path>`. Note: in normal use `collect.py` runs this automatically
 after each capture, so you rarely run it by hand.
 
