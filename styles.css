@@ -80,7 +80,10 @@ input[type="date"]:focus { outline: 1px solid var(--accent); }
 .grid-wrap { flex: 1 1 auto; min-height: 0; position: relative; }
 .grid-scroll { position: absolute; inset: 0; overflow: auto; }
 
-.grid { border-collapse: collapse; font-size: 12px; width: 100%; }
+/* table-layout:fixed locks column widths so changing values/deltas/badges
+   never resize a column — no judder. Columns fill the window on desktop and
+   switch to fixed-px + horizontal scroll on mobile (see media query). */
+.grid { border-collapse: collapse; font-size: 12px; width: 100%; table-layout: fixed; }
 .grid th, .grid td {
   padding: 0 8px; height: 22px; white-space: nowrap; text-align: right;
   border-right: 1px solid var(--grid-line); border-bottom: 1px solid var(--grid-line);
@@ -111,8 +114,8 @@ input[type="date"]:focus { outline: 1px solid var(--accent); }
   z-index: 4; background: var(--header); font-size: 10px; color: var(--text-dim);
 }
 .grid td.cell {
-  color: #fff; font-variant-numeric: tabular-nums; min-width: 96px; position: relative;
-  padding: 0 6px;
+  color: #fff; font-variant-numeric: tabular-nums; position: relative;
+  padding: 0 6px; overflow: hidden;
 }
 .grid td.cell.zero { color: #5f656e; }
 .grid td.cell.absent { background: #0d1015; }
@@ -238,8 +241,10 @@ input[type="date"]:focus { outline: 1px solid var(--accent); }
   .topmeta { gap: 12px; }
   .meta-val { font-size: 12px; }
   .meta-sub { font-size: 8px; }
-  .grid { font-size: 11px; }
-  .grid td.cell { min-width: 62px; padding: 0 5px; }
+  /* fixed-px value columns + auto table width -> horizontal scroll, so values
+     stay readable instead of being squeezed into the viewport */
+  .grid { font-size: 11px; width: auto; }
+  .grid th.exp-col, .grid td.cell { width: 92px; min-width: 92px; max-width: 92px; padding: 0 5px; }
   .grid th.strike-col, .grid td.strike-col { width: 46px; min-width: 46px; max-width: 46px; padding: 0 4px; }
   /* narrower gutter on mobile — badges abbreviate to CW/PW */
   .grid th.wall-col, .grid td.wall-col { left: 46px; width: 40px; min-width: 40px; max-width: 40px; padding: 0 2px; }

@@ -25,6 +25,7 @@
     scrubber: $("scrubber"),
     frameLabel: $("frameLabel"),
     speedSelect: $("speedSelect"),
+    stepSelect: $("stepSelect"),
     moversToggle: $("moversToggle"),
   };
 
@@ -118,15 +119,16 @@
   // ---------- trading day + snapshot clocks ----------
   const TZ = { ET: "America/New_York", CT: "America/Chicago", PT: "America/Los_Angeles" };
   function zoneParts(date, tz) {
+    // HH:MM only — seconds dropped for a cleaner snapshot display
     const fmt = new Intl.DateTimeFormat("en-US", {
       timeZone: tz, month: "2-digit", day: "2-digit",
-      hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true, timeZoneName: "short",
+      hour: "numeric", minute: "2-digit", hour12: true, timeZoneName: "short",
     });
     const parts = fmt.formatToParts(date);
     const get = (t) => (parts.find((p) => p.type === t) || {}).value || "";
     return {
       date: `${get("month")}/${get("day")}`,
-      time: `${get("hour")}:${get("minute")}:${get("second")} ${get("dayPeriod")}`,
+      time: `${get("hour")}:${get("minute")} ${get("dayPeriod")}`,
       abbr: get("timeZoneName"),
     };
   }
@@ -245,6 +247,7 @@
     state.headerEls = [];
     state.expiries.forEach((e) => {
       const th = document.createElement("th");
+      th.className = "exp-col";
       th.textContent = e;
       htr.appendChild(th);
       state.headerEls.push(th);
@@ -480,6 +483,9 @@
   }
 
   // ---------- playback ----------
+  // Frames are captured every 2 min, so the step select maps time → frame jump:
+  // 2m=+1, 10m=+5, 30m=+15, 1h=+30.
+  function step() { return parseInt(els.stepSelect.value, 10) || 1; }
   function fps() { return 2 * parseFloat(els.speedSelect.value); }
   function play() {
     if (!state.frames || state.frames.length < 2) return;
@@ -492,7 +498,7 @@
     clearTimeout(state.timer);
     state.timer = setTimeout(() => {
       if (!state.playing) return;
-      let next = state.frameIndex + 1;
+      let next = state.frameIndex + step();
       if (next >= state.frames.length) next = 0;
       showFrame(next);
       scheduleTick();
@@ -508,12 +514,13 @@
 
   // ---------- wiring ----------
   els.playBtn.onclick = togglePlay;
-  els.nextBtn.onclick = () => { stop(); showFrame(state.frameIndex + 1); };
-  els.prevBtn.onclick = () => { stop(); showFrame(state.frameIndex - 1); };
+  els.nextBtn.onclick = () => { stop(); showFrame(state.frameIndex + step()); };
+  els.prevBtn.onclick = () => { stop(); showFrame(state.frameIndex - step()); };
   els.firstBtn.onclick = () => { stop(); showFrame(0); };
   els.lastBtn.onclick = () => { stop(); showFrame(state.frames.length - 1); };
   els.scrubber.oninput = () => { stop(); showFrame(+els.scrubber.value); };
   els.speedSelect.onchange = () => { if (state.playing) scheduleTick(); };
+  els.stepSelect.onchange = () => {};
   els.moversToggle.onchange = () => showFrame(state.frameIndex);
   els.datePick.onchange = loadRange;
   els.datePickEnd.onchange = loadRange;
@@ -521,8 +528,8 @@
   document.addEventListener("keydown", (e) => {
     if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }
-    else if (e.code === "ArrowRight") { stop(); showFrame(state.frameIndex + 1); }
-    else if (e.code === "ArrowLeft") { stop(); showFrame(state.frameIndex - 1); }
+    else if (e.code === "ArrowRight") { stop(); showFrame(state.frameIndex + step()); }
+    else if (e.code === "ArrowLeft") { stop(); showFrame(state.frameIndex - step()); }
     else if (e.code === "Home") { stop(); showFrame(0); }
     else if (e.code === "End") { stop(); showFrame(state.frames.length - 1); }
   });
