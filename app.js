@@ -610,10 +610,44 @@
     };
   }
 
-  // minimal markdown -> HTML (headings, bold, code, bullet/numbered lists)
+  // The squeeze-strategy rubric lives here (not secret) so the SAME prompt works
+  // whether we send it to a Worker or copy it to the clipboard for manual paste.
+  const RUBRIC = `You are a GEX (Gamma Exposure) squeeze analyst applying a specific replay-based framework. You are given a PRE-COMPUTED structural summary of an options GEX heatmap replay window (all numbers already calculated in code). Output a concise BULL CASE and BEAR/INVALIDATION CASE for near-term price.
+
+FRAMEWORK — the STRUCTURE is the primary signal; premium/flow is CONFIRMATION ONLY:
+1. Negative-GEX nodes ("purple nodes") are liquidity magnets. A large NEGATIVE-GEX node ABOVE spot means dealers are short gamma and hedging can drive price UP toward it (squeeze / gap-up). This is the core bullish setup.
+2. Lifecycle beats a static value. Favor nodes whose negative GEX is GROWING through the session (read the trajectory). Growth toward the session's most-negative levels is the trigger; magnitude thresholds are relative to the ticker.
+3. "Fresh"/late-day nodes: a large negative node that appears or grows rapidly late in the session, especially well OTM, is high-conviction institutional positioning for a near-term move.
+4. "Untouched": if price has NOT reached/rejected the node this session, the magnet is intact (bullish). If price already touched and rejected it, the setup is weakened/invalidated.
+5. Premium/flow is NOT in this dataset — DO NOT fabricate premium numbers. Treat flow as a manual check the user performs (qualitative "massive disparity", e.g. millions in call premium vs thousands in puts = extra conviction). Always end with a one-line manual-flow-check reminder.
+6. Timing: these setups run on a ~7-day window tied to Friday weekly OpEx.
+
+RULES: Use the provided numbers exactly. Do NOT do your own arithmetic beyond simple comparison. Never invent values. If no node qualifies for a bull setup, say so plainly rather than forcing one.
+
+OUTPUT — Markdown, ~200-350 words:
+## Bull case
+Reference the specific qualifying node(s) by strike + expiry with their numbers (start->now GEX, OTM distance, fresh?, untouched?). Explain the magnet/squeeze logic.
+## Bear / invalidation
+Downside magnets (negative nodes below spot), decaying nodes, touched/rejected nodes, or spot drifting away. State concrete invalidation triggers.
+## Conviction & confirmation
+One line — structural conviction (Low/Medium/High) with the reason — then exactly: "Manual flow check: confirm call vs put premium disparity on your flow scanner near the target node before execution."
+
+This is structural analysis, not financial advice.`;
+
+  function buildFullPrompt(summary) {
+    return RUBRIC +
+      "\n\nINPUT — pre-computed structural summary of the selected replay window " +
+      "(all numbers already calculated; use as-is, do not invent):\n```json\n" +
+      JSON.stringify(summary, null, 2) + "\n```\n\nProduce the analysis per the framework.";
+  }
+
+  // minimal markdown -> HTML (headings, bold, code, links, bullet/numbered lists)
   function renderMarkdown(md) {
     const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`(.+?)`/g, "<code>$1</code>");
+    const inline = (s) => esc(s)
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`(.+?)`/g, "<code>$1</code>");
     let html = "", ul = false, ol = false;
     const closeLists = () => { if (ul) { html += "</ul>"; ul = false; } if (ol) { html += "</ol>"; ol = false; } };
     (md || "").replace(/\r/g, "").split("\n").forEach((raw) => {
