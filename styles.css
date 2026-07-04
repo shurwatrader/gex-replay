@@ -68,6 +68,57 @@ input[type="date"] {
 input[type="date"]:focus { outline: 1px solid var(--accent); }
 .range-end { color: var(--text-faint); }
 
+/* Analyze button + LLM read modal */
+.analyze-btn {
+  background: linear-gradient(180deg, #1b6dff, #1657d6); color: #fff;
+  border: 1px solid #2a72ff; border-radius: 5px; padding: 5px 10px;
+  font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.analyze-btn:hover { filter: brightness(1.1); }
+.analyze-btn:active { transform: translateY(1px); }
+
+.analysis-modal {
+  position: fixed; inset: 0; z-index: 50; display: flex;
+  align-items: center; justify-content: center; padding: 24px;
+  background: rgba(4, 7, 12, 0.72);
+}
+.analysis-modal[hidden] { display: none; }
+.analysis-panel {
+  width: min(680px, 100%); max-height: 86vh; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--grid-line); border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+.analysis-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--grid-line);
+  font-weight: 700; font-size: 14px;
+}
+.analysis-head small { color: var(--text-dim); font-weight: 400; font-size: 11px; margin-left: 6px; }
+.analysis-close {
+  background: none; border: none; color: var(--text-dim); font-size: 20px;
+  line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.analysis-close:hover { color: #fff; }
+.analysis-body {
+  padding: 4px 18px 8px; overflow-y: auto; font-size: 13px; line-height: 1.5; color: var(--text);
+}
+.analysis-body h2 { font-size: 15px; margin: 16px 0 4px; color: #fff; }
+.analysis-body h3 { font-size: 13px; margin: 14px 0 4px; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
+.analysis-body h4 { font-size: 12px; margin: 10px 0 3px; color: #cdd3dd; }
+.analysis-body p { margin: 6px 0; }
+.analysis-body ul, .analysis-body ol { margin: 6px 0 6px 18px; padding: 0; }
+.analysis-body li { margin: 3px 0; }
+.analysis-body code { background: var(--panel-2); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+.analysis-body strong { color: #fff; }
+.analysis-foot {
+  padding: 8px 16px; border-top: 1px solid var(--grid-line);
+  font-size: 10px; color: var(--text-faint); text-align: center;
+}
+@media (max-width: 600px) {
+  .analyze-btn { width: 100%; margin-left: 0; }
+  .analysis-modal { padding: 10px; }
+}
+
 /* Trading Day + Snapshot (ET) — dual timestamp so overnight data is unambiguous */
 .topmeta { display: flex; align-items: stretch; gap: 22px; margin-left: auto; }
 .meta-block { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; }

@@ -23,6 +23,7 @@
       <label class="range-end">to
         <input type="date" id="datePickEnd" />
       </label>
+      <button id="analyzeBtn" class="analyze-btn" title="Analyze the selected date range with the squeeze framework">🧠 Analyze</button>
     </div>
     <div class="topmeta">
       <div class="meta-block">
@@ -85,6 +86,17 @@
       </label>
     </div>
   </footer>
+
+  <div id="analysisModal" class="analysis-modal" hidden>
+    <div class="analysis-panel">
+      <div class="analysis-head">
+        <span>🧠 GEX Squeeze Read <small id="analysisRange"></small></span>
+        <button id="analysisClose" class="analysis-close" title="Close">×</button>
+      </div>
+      <div id="analysisBody" class="analysis-body"></div>
+      <div class="analysis-foot">Structural read from the replay data · premium/flow not included · not financial advice</div>
+    </div>
+  </div>
 </div>
 <script src="app.js"></script>
 </body>

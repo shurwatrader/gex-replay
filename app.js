@@ -27,6 +27,11 @@
     speedSelect: $("speedSelect"),
     stepSelect: $("stepSelect"),
     moversToggle: $("moversToggle"),
+    analyzeBtn: $("analyzeBtn"),
+    analysisModal: $("analysisModal"),
+    analysisBody: $("analysisBody"),
+    analysisClose: $("analysisClose"),
+    analysisRange: $("analysisRange"),
   };
 
   const state = {
@@ -517,6 +522,145 @@
   }
   function togglePlay() { state.playing ? stop() : play(); }
 
+  // ---------- squeeze analysis (distiller + LLM read) ----------
+  function etHM(capturedAt) {
+    if (!capturedAt) return "";
+    const d = new Date(capturedAt);
+    return isNaN(d) ? "" : zoneParts(d, TZ.ET).time; // "3:12 PM"
+  }
+  function downsample(arr, n) {
+    if (arr.length <= n) return arr.slice();
+    const out = [], step = (arr.length - 1) / (n - 1);
+    for (let k = 0; k < n; k++) out.push(arr[Math.round(k * step)]);
+    return out;
+  }
+
+  // Turn the loaded frames into a compact, code-computed feature summary the
+  // model can reason over (never send raw frames — that invites math errors).
+  function buildAnalysisSummary() {
+    const frames = state.frames;
+    if (!frames || !frames.length) return null;
+    const first = frames[0], last = frames[frames.length - 1];
+    const spotEnd = last.price != null ? Number(last.price) : null;
+    const spotStart = first.price != null ? Number(first.price) : null;
+    const spot = spotEnd != null ? spotEnd : spotStart;
+
+    let priceLow = Infinity, priceHigh = -Infinity;
+    frames.forEach((f) => { if (f.price != null) { const p = Number(f.price); if (p < priceLow) priceLow = p; if (p > priceHigh) priceHigh = p; } });
+    if (!isFinite(priceLow)) { priceLow = null; priceHigh = null; }
+
+    // GEX time series per (strike|expiry)
+    const series = new Map();
+    frames.forEach((f) => {
+      const exps = f.expiries || [];
+      (f.rows || []).forEach((row) => {
+        (row.values || []).forEach((cell, c) => {
+          const exp = exps[c]; if (exp == null) return;
+          const key = row.strike + "|" + exp;
+          let s = series.get(key);
+          if (!s) { s = { strike: row.strike, exp, vals: [] }; series.set(key, s); }
+          s.vals.push({ i: s.vals.length, gex: parseCellValue(cell.text), t: f.capturedAt });
+        });
+      });
+    });
+
+    const NEG = -400000;             // significance floor for a "node"
+    const halfway = frames.length * 0.5;
+    const cands = [];
+    series.forEach((s) => {
+      const cur = s.vals[s.vals.length - 1].gex;
+      if (cur >= NEG) return;        // only meaningfully-negative current nodes
+      const start = s.vals[0].gex;
+      let minGex = Infinity;
+      s.vals.forEach((v) => { if (v.gex < minGex) minGex = v.gex; });
+      let crossed = null;
+      for (const v of s.vals) { if (v.gex <= -1e6) { crossed = v.t; break; } }
+      let firstSigIdx = null, freshT = null;
+      for (const v of s.vals) { if (v.gex < NEG) { firstSigIdx = v.i; freshT = v.t; break; } }
+      const fresh = firstSigIdx != null && firstSigIdx > halfway;
+      const aboveSpot = spot != null ? s.strike > spot : null;
+      const otmPct = (spot != null && spot > 0) ? Math.round((s.strike - spot) / spot * 1000) / 10 : null;
+      const untouched = priceLow != null ? !(s.strike >= priceLow && s.strike <= priceHigh) : null;
+      cands.push({
+        strike: s.strike, expiry: s.exp, aboveSpot, otmPct,
+        gexStart: fmtCompact(start), gexNow: fmtCompact(cur), gexMin: fmtCompact(minGex),
+        crossedMinus1M: crossed ? etHM(crossed) : null,
+        fresh, firstSeenET: fresh ? etHM(freshT) : null, untouched,
+        trajectory: downsample(s.vals, 8).map((v) => `${etHM(v.t)} ${fmtCompact(v.gex)}`),
+        _score: Math.abs(cur) * (aboveSpot ? 2 : 1) * (fresh ? 1.6 : 1) * (untouched ? 1.3 : 1),
+      });
+    });
+    cands.sort((a, b) => b._score - a._score);
+    const nodes = cands.slice(0, 12).map(({ _score, ...n }) => n);
+
+    return {
+      meta: {
+        series: (state.series && state.series.title) || "",
+        tradingDays: [...new Set(frames.map((f) => f.tradingDay).filter(Boolean))],
+        frames: frames.length,
+        windowET: `${etHM(first.capturedAt)} – ${etHM(last.capturedAt)}`,
+        spotStart, spotEnd, priceLow, priceHigh,
+        expiries: state.expiries,
+      },
+      currentWalls: {
+        callWall: state.callWall != null ? state.strikes[state.callWall] : null,
+        putWall: state.putWall != null ? state.strikes[state.putWall] : null,
+      },
+      nodes,
+    };
+  }
+
+  // minimal markdown -> HTML (headings, bold, code, bullet/numbered lists)
+  function renderMarkdown(md) {
+    const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`(.+?)`/g, "<code>$1</code>");
+    let html = "", ul = false, ol = false;
+    const closeLists = () => { if (ul) { html += "</ul>"; ul = false; } if (ol) { html += "</ol>"; ol = false; } };
+    (md || "").replace(/\r/g, "").split("\n").forEach((raw) => {
+      const l = raw.trimEnd();
+      if (/^###\s+/.test(l)) { closeLists(); html += "<h4>" + inline(l.replace(/^###\s+/, "")) + "</h4>"; }
+      else if (/^##\s+/.test(l)) { closeLists(); html += "<h3>" + inline(l.replace(/^##\s+/, "")) + "</h3>"; }
+      else if (/^#\s+/.test(l)) { closeLists(); html += "<h2>" + inline(l.replace(/^#\s+/, "")) + "</h2>"; }
+      else if (/^[-*]\s+/.test(l)) { if (!ul) { closeLists(); html += "<ul>"; ul = true; } html += "<li>" + inline(l.replace(/^[-*]\s+/, "")) + "</li>"; }
+      else if (/^\d+\.\s+/.test(l)) { if (!ol) { closeLists(); html += "<ol>"; ol = true; } html += "<li>" + inline(l.replace(/^\d+\.\s+/, "")) + "</li>"; }
+      else if (l === "") { closeLists(); }
+      else { closeLists(); html += "<p>" + inline(l) + "</p>"; }
+    });
+    closeLists();
+    return html;
+  }
+
+  function openAnalysis() { els.analysisModal.hidden = false; }
+  function closeAnalysis() { els.analysisModal.hidden = true; }
+  function showAnalysis(md) { els.analysisBody.innerHTML = renderMarkdown(md); }
+
+  async function onAnalyze() {
+    const summary = buildAnalysisSummary();
+    if (!summary) { openAnalysis(); showAnalysis("_No data loaded to analyze._"); return; }
+    let endpoint = localStorage.getItem("gex_analyze_endpoint");
+    let token = localStorage.getItem("gex_analyze_token");
+    if (!endpoint) {
+      endpoint = (prompt("One-time setup — paste your Analyze Worker URL (…workers.dev):", "") || "").trim();
+      if (!endpoint) return;
+      localStorage.setItem("gex_analyze_endpoint", endpoint);
+    }
+    if (!token) {
+      token = (prompt("One-time setup — paste your shared token (SHARED_TOKEN):", "") || "").trim();
+      if (token) localStorage.setItem("gex_analyze_token", token);
+    }
+    els.analysisRange.textContent = summary.meta.tradingDays.join(", ") + " · " + summary.meta.windowET;
+    openAnalysis();
+    showAnalysis("Analyzing " + summary.nodes.length + " candidate nodes across " + summary.meta.frames + " frames…");
+    try {
+      const res = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, summary }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showAnalysis("**Error " + res.status + ":** " + (data.error || "request failed") + (data.detail ? "\n\n`" + JSON.stringify(data.detail).slice(0, 300) + "`" : "")); return; }
+      showAnalysis(data.markdown || "_No output returned._");
+    } catch (e) {
+      showAnalysis("**Request failed:** " + e.message + "\n\nCheck the Worker URL is correct and deployed. To re-enter it, clear `gex_analyze_endpoint` in localStorage.");
+    }
+  }
+
   // ---------- wiring ----------
   els.playBtn.onclick = togglePlay;
   els.nextBtn.onclick = () => { stop(); showFrame(state.frameIndex + step()); };
@@ -529,8 +673,12 @@
   els.moversToggle.onchange = () => showFrame(state.frameIndex);
   els.datePick.onchange = loadRange;
   els.datePickEnd.onchange = loadRange;
+  els.analyzeBtn.onclick = onAnalyze;
+  els.analysisClose.onclick = closeAnalysis;
+  els.analysisModal.onclick = (e) => { if (e.target === els.analysisModal) closeAnalysis(); };
 
   document.addEventListener("keydown", (e) => {
+    if (e.code === "Escape" && !els.analysisModal.hidden) { closeAnalysis(); return; }
     if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
     if (e.code === "Space") { e.preventDefault(); togglePlay(); }
     else if (e.code === "ArrowRight") { stop(); showFrame(state.frameIndex + step()); }
