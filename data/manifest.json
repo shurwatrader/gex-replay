@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-04T02:35:43.404102+00:00",
+  "generatedAt": "2026-07-04T03:04:34.105109+00:00",
   "series": [
     {
       "slug": "SPY_GEXOI_700_800",
@@ -8,7 +8,7 @@
       "dates": [
         {
           "date": "2026-07-04",
-          "frames": 1,
+          "frames": 14,
           "file": "data/SPY_GEXOI_700_800/2026-07-04.json"
         }
       ]
