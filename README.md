@@ -99,3 +99,5 @@ Browsers block `fetch()` from `file://`, so serve the folder over http:
 python -m http.server 8000
 # open http://localhost:8000
 ```
+
+NFA
