@@ -1,32 +1,61 @@
 # GEX Replay
 
-Interactive, frame-by-frame replay of GEX (gamma-exposure) heatmap snapshots,
-rebuilt live in the browser from the captured JSON. Play / pause, scrub, step
-frame-by-frame, change speed, and highlight the biggest movers between frames.
+Interactive, frame-by-frame replay of **GEX (gamma-exposure) heatmap snapshots**
+from the Quantum Terminal, rebuilt live in the browser from captured JSON.
 
-Hosted on GitHub Pages — no build tooling, just static files.
+**Live:** https://shurwatrader.github.io/gex-replay/
 
-## How it works
+Hosted on GitHub Pages — no build tooling, just static files (`index.html`,
+`app.js`, `styles.css`) reading JSON out of `data/`.
 
-- `scripts/build_manifest.py` scans your local `gex_snapshots` collection,
-  bundles each day's JSON snapshots into `data/<series>/<date>.json`, and writes
-  `data/manifest.json` describing what's available.
-- `index.html` + `app.js` load the manifest, then rebuild the heatmap grid from
-  each snapshot's per-cell `text` + `color`. The colors come straight from the
-  captured data, so the replay matches the source terminal.
+## What it shows
+
+- A strike × expiration heatmap for each 2-minute snapshot, colored by value on
+  a diverging scale (purple = negative GEX, teal → green → yellow = positive),
+  anchored to each frame's own min/max.
+- **Movers** — the biggest changes vs the previous frame, ringed and labeled with
+  a green ▲ / red ▼ delta chip.
+- **Walls** — derived Call/Put wall rows, badged in the gutter (CW/PW on mobile)
+  with a dashed line (below the call wall, above the put wall).
+- **King stars** — green ★ for the GEX-OI king cell, red ★ for the Vol king.
+- **Spot** — a cyan chip marks the strike nearest the underlying price.
+- **Trading Day + Snapshot (ET)** shown together, so overnight data is
+  unambiguous (Trading Day 7/6 · Snapshot 7/5 8:00 PM ET).
+
+## Controls
+
+- **Space** — play / pause · **← / →** — step · **Home / End** — first / last
+- **Date picker** — pick a trading day, or a range to play multiple days as one timeline
+- **Step** — time-step per jump: 2m (+1 frame) · 10m (+5) · 30m (+15) · 1h (+30)
+- **Speed** — 0.5× (default) up to 2×
+- **Movers** — toggle the change highlights
+- Scrubber — drag to any frame
+
+Desktop uses fixed-size cells (no judder as values change); mobile lets columns
+size to content and scroll so nothing overlaps.
+
+## Where the data comes from
+
+There's no API — every snapshot is scraped from the terminal's DOM, bucketed by
+**Eastern-Time trading day** (rolling at 8 PM ET), bundled, and published.
+
+**See [`docs/DATA_PIPELINE.md`](docs/DATA_PIPELINE.md)** for the full flow, the
+snapshot JSON schema, and reference copies of the two capture scripts
+(`browser_extract.js`, `collect.py`).
 
 ## Publishing new snapshots
 
+In normal use the capture script runs the build and pushes automatically. To do
+it by hand from the repo root:
+
 ```bash
-# from the repo root
 python scripts/build_manifest.py            # rebuild data/ + manifest.json
 git add -A && git commit -m "Update snapshots"
-git push
+git push                                     # GitHub Pages redeploys
 ```
 
-By default the build reads from `C:/Users/username/gex_snapshots`; override with
-`--source <path>`. Note: in normal use `collect.py` runs this automatically
-after each capture, so you rarely run it by hand.
+`build_manifest.py` reads from `…/gex_snapshots` by default; override with
+`--source <path>`.
 
 ## Running locally
 
@@ -34,13 +63,5 @@ Browsers block `fetch()` from `file://`, so serve the folder over http:
 
 ```bash
 python -m http.server 8000
-# then open http://localhost:8000
+# open http://localhost:8000
 ```
-
-## Controls
-
-- **Space** — play / pause
-- **← / →** — previous / next frame
-- **Home / End** — first / last frame
-- Scrubber, speed selector, and a Movers toggle (yellow outline on the cells
-  that changed most since the previous frame).
