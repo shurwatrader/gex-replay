@@ -10,43 +10,6 @@
 (function () {
   const STRIKE_MIN = 700;
   const STRIKE_MAX = 800;
-  const FLOW_TARGET_STRIKE = 745;
-
-  // Step 1 capability check: does THIS view expose a real-time transaction tape
-  // (individual trades with timestamps + contract counts + premium/side)? The
-  // GEX-OI Matrix we scrape does NOT — order flow is a separate "Flow" tool in
-  // the terminal. If a tape table is ever present on the scraped DOM, the 745
-  // premium math (Step 2) can be filled in against its real column layout.
-  function analyzeFlow(targetStrike) {
-    const tables = Array.from(document.querySelectorAll('table'));
-    const strikeMatrix = tables.find(t => t.textContent.includes('Strike'));
-    const flowTable = tables.find(t => t !== strikeMatrix &&
-      /time|premium|contracts?|side|sweep|type|bid|ask/i.test((t.querySelector('thead') || {}).innerText || ''));
-
-    if (!flowTable) {
-      return {
-        flow_data_available: false,
-        target_strike: targetStrike,
-        scraped_aggregate_call_premium: null,
-        scraped_aggregate_put_premium: null,
-        calculated_premium_ratio: null,
-        institutional_disparity_confirmed: null,
-        data_source_verification_note: "No transaction/tape table in this DOM. Scrape target is Quantum Terminal's GEX-OI Matrix (aggregate GEX/OI/Volume only) — no per-trade timestamps, contract counts, or premium. Order flow is a separate 'Flow' tool not rendered on this view."
-      };
-    }
-    // A flow table was found — parse per-trade rows for the target strike here
-    // once its real column layout is verified. Until then, report presence but
-    // leave the math unfilled rather than emit unverified numbers.
-    return {
-      flow_data_available: true,
-      target_strike: targetStrike,
-      scraped_aggregate_call_premium: null,
-      scraped_aggregate_put_premium: null,
-      calculated_premium_ratio: null,
-      institutional_disparity_confirmed: null,
-      data_source_verification_note: "Flow table detected on this view but its column layout is not yet mapped; 745 premium math pending verification of the real Flow-tool DOM."
-    };
-  }
 
   function classifyStar(svg) {
     if (!svg) return null;
@@ -160,7 +123,6 @@
       capturedAt: new Date().toISOString(),
       netExposure: expMatch ? expMatch[1] : null,
       price: expMatch ? expMatch[2] : null,
-      realtime_flow_analysis: analyzeFlow(FLOW_TARGET_STRIKE),
     };
 
     const blob = new Blob([JSON.stringify(result)], { type: 'application/json' });

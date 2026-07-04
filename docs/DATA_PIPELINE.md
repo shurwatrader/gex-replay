@@ -122,3 +122,44 @@ Loads the manifest, then rebuilds the heatmap **live from the JSON**:
 
 Requirements: Python 3.9+ with `tzdata` installed (`pip install tzdata` — Windows
 Python ships no IANA time zone database, which the ET logic needs).
+
+## Not captured yet: per-strike flow detail (possible future enhancement)
+
+The Matrix cells we scrape carry only the single aggregate value (GEX / OI /
+Volume). The terminal *does* hold much richer **per-strike flow detail**, but it
+isn't part of the scraped payload today. Documenting it here in case it's worth
+capturing later.
+
+**What's available.** Clicking any matrix cell opens a **"STRIKE DETAIL"** popup
+(e.g. `SPY $745 · 07-06`) with, for that strike + expiry:
+
+- Today's flow **volume** and **call % / put %** split
+- **Call volume** / **put volume**
+- **Total premium** (single figure — *not* split call vs put) + average price
+- Open interest (total / call / put), **% of OI traded**
+- Implied vol (call IV / put IV)
+- Net **GEX (OI)**, **GEX (Vol)**, and **VEX** — each with a dollar **call / put
+  split** (e.g. Net GEX-Vol `+1.72B · call +3.96B / put −2.24B`)
+
+**How it loads.** The popup is *not* fetched on click — the cell's handler is a
+pure state update (`D({strike, exp, rect})`). The data is already in memory,
+having been loaded from the terminal's private JSON API
+(`/api/v1/gex-all/SPY?expiries=5`, `/api/v1/matrix/SPY?version=2`, …).
+
+**Why "natural" (no-click) scraping is non-trivial.** The flow fields are **not**
+in the visible matrix DOM — they're only written into the DOM when the popup
+opens. So getting them without a click requires one of:
+
+1. **Click each target cell**, read the popup, close it — DOM-only, no auth, but
+   one click per strike (≈5 for all 745 expiries).
+2. **Read the app's in-memory React state** — no click, but brittle (breaks on
+   any terminal front-end update).
+3. **Call the private API directly** (`/api/v1/gex-all/SPY`) — returns every
+   strike/expiry's flow in one shot, no clicks or DOM. Requires the app's
+   **Bearer auth token**, so it means handling session credentials.
+
+**What it can't do.** There's no individual transaction tape (no per-trade
+timestamps or "bought-at-ask" flags), and premium isn't split call-vs-put — so an
+exact per-trade premium analysis isn't possible from this source. The usable
+directional-disparity signals are the **call/put volume split** and the
+dollar-denominated **Net GEX (Vol) call/put split**.

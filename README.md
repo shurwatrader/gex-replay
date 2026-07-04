@@ -43,7 +43,10 @@ heatmap live from that JSON.
 
 **For the full detail** — the scraper, the exact DOM selectors, the snapshot JSON
 schema, and reference copies of the capture scripts — see
-**[`docs/DATA_PIPELINE.md`](docs/DATA_PIPELINE.md)**.
+**[`docs/DATA_PIPELINE.md`](docs/DATA_PIPELINE.md)**. That doc also notes a
+possible future enhancement: capturing the terminal's richer **per-strike flow
+detail** (call/put volume, premium, IV, GEX/VEX splits) that today only surfaces
+in a click-to-open popup.
 
 ### How a trading day is counted
 
