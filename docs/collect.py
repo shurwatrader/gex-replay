@@ -32,8 +32,9 @@ TRADING_DAY_ROLL_HOUR = 20  # 8 PM ET
 REPLAY_REPO = Path(r"C:\Users\jalee\Documents\GitHub\gex-replay")
 REPLAY_BUILD_SCRIPT = REPLAY_REPO / "scripts" / "build_manifest.py"
 UPDATE_REPLAY = True        # rebuild the replay site's data on every snapshot
-PUBLISH_REPLAY = False      # user pushes manually via GitHub Desktop (~hourly)
-PUSH_INTERVAL_MINUTES = 60  # batch pushes: at most one commit/push this often
+PUBLISH_REPLAY = True       # auto commit + push (CLI is authed as shurwatrader)
+PUSH_INTERVAL_MINUTES = 7   # publish as often as GitHub Pages allows: its build
+                            # limit is ~10/hour, so ~7 min (~8-9/hr) is the safe max
 
 # This machine's git command line is authenticated as a different GitHub
 # account (attahj), so we push shurwatrader's repo with a scoped token read
