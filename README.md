@@ -36,12 +36,43 @@ size to content and scroll so nothing overlaps.
 
 ## Where the data comes from
 
-There's no API — every snapshot is scraped from the terminal's DOM, bucketed by
-**Eastern-Time trading day** (rolling at 8 PM ET), bundled, and published.
+High level: there's **no API**. Every ~2 minutes a snapshot is scraped directly
+from the Quantum Terminal's DOM, bucketed by **Eastern-Time trading day**,
+bundled into `data/`, and published to GitHub Pages. The viewer rebuilds the
+heatmap live from that JSON.
 
-**See [`docs/DATA_PIPELINE.md`](docs/DATA_PIPELINE.md)** for the full flow, the
-snapshot JSON schema, and reference copies of the two capture scripts
-(`browser_extract.js`, `collect.py`).
+**For the full detail** — the scraper, the exact DOM selectors, the snapshot JSON
+schema, and reference copies of the capture scripts — see
+**[`docs/DATA_PIPELINE.md`](docs/DATA_PIPELINE.md)**.
+
+### How a trading day is counted
+
+Everything is in **Eastern Time (ET)**, and a "trading day" is **not** a midnight
+calendar day. It runs on a rolling 24-hour cycle that **rolls at 8:00 PM ET** —
+the moment the overnight/futures session begins — so a full session's data
+(overnight through the next afternoon) is grouped together:
+
+> **A trading day covers 8:00 PM ET the evening before → 7:59 PM ET that day.**
+> Any snapshot taken at **8:00 PM ET or later is counted as the _next_ day.**
+
+**Example — Monday 7/6's data set:**
+
+| Snapshot taken at (ET)     | Trading Day |
+|----------------------------|-------------|
+| Sunday **7/5, 8:00 PM**    | **7/6** ← session opens; counts as Monday |
+| Sunday 7/5, 11:30 PM       | 7/6         |
+| Monday 7/6, 9:30 AM (open) | 7/6         |
+| Monday 7/6, 3:00 PM        | 7/6         |
+| Monday **7/6, 8:00 PM**    | **7/7** ← next session begins            |
+
+Because a single trading day spans two calendar dates, the UI always shows the
+two together so overnight data is never ambiguous:
+
+- **Trading Day:** 7/6
+- **Snapshot (ET):** 7/5, 8:00 PM
+
+The **date picker filters by trading day**, and snapshots inside a day are ordered
+by true capture time (not by clock time, which wraps past midnight within the day).
 
 ## Publishing new snapshots
 
