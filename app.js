@@ -328,7 +328,11 @@
     state.frameIndex = idx;
     const frame = frames[idx];
     const cur = frameMap(frame);
-    const prev = idx > 0 ? frameMap(frames[idx - 1]) : new Map();
+    // Step-aware delta: compare against the frame `step` back, so the delta/
+    // movers reflect change over the selected interval (10m step -> 10m ago),
+    // not just the previous 2-min frame. No delta until a full window exists.
+    const prevIdx = idx - step();
+    const prev = prevIdx >= 0 ? frameMap(frames[prevIdx]) : new Map();
 
     let vmin = 0, vmax = 0;
     cur.forEach(({ parsed }) => {
@@ -340,7 +344,7 @@
     els.legMin.textContent = fmtCompact(vmin);
     els.legMax.textContent = "+" + fmtCompact(vmax);
 
-    // movers: top 6 |delta| vs previous frame
+    // movers: top 6 |delta| over the step window (vs the frame `step` back)
     const moverMap = new Map();
     if (els.moversToggle.checked && prev.size) {
       const deltas = [];
@@ -410,7 +414,7 @@
         const pp = prev.get(key);
         if (pp) {
           const dd = parsed.num - pp.parsed.num;
-          tip += `\nΔ ${dd >= 0 ? "+" : ""}${fmtCompact(dd)} vs prev`;
+          tip += `\nΔ ${dd >= 0 ? "+" : ""}${fmtCompact(dd)} vs ${stepLabel()} ago`;
         }
         if (cell.oiKing) tip += `\n★ GEX OI king`;
         if (cell.volKing) tip += `\n★ GEX Vol king`;
@@ -486,6 +490,7 @@
   // Frames are captured every 2 min, so the step select maps time → frame jump:
   // 2m=+1, 10m=+5, 30m=+15, 1h=+30.
   function step() { return parseInt(els.stepSelect.value, 10) || 1; }
+  function stepLabel() { const o = els.stepSelect.selectedOptions[0]; return o ? o.text : "2m"; }
   function fps() { return 2 * parseFloat(els.speedSelect.value); }
   function play() {
     if (!state.frames || state.frames.length < 2) return;
@@ -520,7 +525,7 @@
   els.lastBtn.onclick = () => { stop(); showFrame(state.frames.length - 1); };
   els.scrubber.oninput = () => { stop(); showFrame(+els.scrubber.value); };
   els.speedSelect.onchange = () => { if (state.playing) scheduleTick(); };
-  els.stepSelect.onchange = () => {};
+  els.stepSelect.onchange = () => showFrame(state.frameIndex);  // deltas track the step window
   els.moversToggle.onchange = () => showFrame(state.frameIndex);
   els.datePick.onchange = loadRange;
   els.datePickEnd.onchange = loadRange;
