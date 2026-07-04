@@ -241,10 +241,13 @@ input[type="date"]:focus { outline: 1px solid var(--accent); }
   .topmeta { gap: 12px; }
   .meta-val { font-size: 12px; }
   .meta-sub { font-size: 8px; }
-  /* fixed-px value columns + auto table width -> horizontal scroll, so values
-     stay readable instead of being squeezed into the viewport */
-  .grid { font-size: 11px; width: auto; }
-  .grid th.exp-col, .grid td.cell { width: 92px; min-width: 92px; max-width: 92px; padding: 0 5px; }
+  /* On mobile, drop fixed cells: let each column size to its own content so a
+     value + delta chip + star never overlap. Table overflows -> horizontal
+     scroll. Columns may shift a little as content changes during playback,
+     which is acceptable on mobile (fixed cells are a desktop concern). */
+  .grid { font-size: 11px; width: auto; table-layout: auto; }
+  .grid th.exp-col, .grid td.cell { width: auto; min-width: 78px; max-width: none; padding: 0 5px; }
+  .grid td.cell, .grid td.cell .cw { overflow: visible; }
   .grid th.strike-col, .grid td.strike-col { width: 46px; min-width: 46px; max-width: 46px; padding: 0 4px; }
   /* narrower gutter on mobile — badges abbreviate to CW/PW */
   .grid th.wall-col, .grid td.wall-col { left: 46px; width: 40px; min-width: 40px; max-width: 40px; padding: 0 2px; }
