@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-05T20:23:09.700682+00:00",
+  "generatedAt": "2026-07-05T20:31:17.902709+00:00",
   "series": [
     {
       "slug": "MU_GEXOI",
@@ -8,7 +8,7 @@
       "dates": [
         {
           "date": "2026-07-05",
-          "frames": 4,
+          "frames": 7,
           "file": "data/MU_GEXOI/2026-07-05.json"
         }
       ]
@@ -20,7 +20,7 @@
       "dates": [
         {
           "date": "2026-07-05",
-          "frames": 4,
+          "frames": 7,
           "file": "data/SPX_GEXOI/2026-07-05.json"
         }
       ]
@@ -32,7 +32,7 @@
       "dates": [
         {
           "date": "2026-07-05",
-          "frames": 4,
+          "frames": 8,
           "file": "data/SPY_GEXOI/2026-07-05.json"
         }
       ]
@@ -56,7 +56,7 @@
       "dates": [
         {
           "date": "2026-07-05",
-          "frames": 4,
+          "frames": 7,
           "file": "data/TSLA_GEXOI/2026-07-05.json"
         }
       ]
