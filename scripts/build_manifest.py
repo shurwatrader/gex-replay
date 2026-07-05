@@ -112,7 +112,7 @@ def main():
         dates = []
         for date_dir in sorted(p for p in data_dir.iterdir() if p.is_dir()):
             date = date_dir.name
-            json_files = sorted(date_dir.glob(f"{symbol}_{date}_*.json"))
+            json_files = sorted(date_dir.glob(f"{symbol}_*.json"))
             if not json_files:
                 continue
 

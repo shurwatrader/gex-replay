@@ -1,6 +1,42 @@
 {
-  "generatedAt": "2026-07-05T20:06:30.129340+00:00",
+  "generatedAt": "2026-07-05T20:21:28.360917+00:00",
   "series": [
+    {
+      "slug": "MU_GEXOI",
+      "symbol": "MU",
+      "title": "MU \u2014 GEX OI",
+      "dates": [
+        {
+          "date": "2026-07-05",
+          "frames": 2,
+          "file": "data/MU_GEXOI/2026-07-05.json"
+        }
+      ]
+    },
+    {
+      "slug": "SPX_GEXOI",
+      "symbol": "SPX",
+      "title": "SPX \u2014 GEX OI",
+      "dates": [
+        {
+          "date": "2026-07-05",
+          "frames": 2,
+          "file": "data/SPX_GEXOI/2026-07-05.json"
+        }
+      ]
+    },
+    {
+      "slug": "SPY_GEXOI",
+      "symbol": "SPY",
+      "title": "SPY \u2014 GEX OI",
+      "dates": [
+        {
+          "date": "2026-07-05",
+          "frames": 3,
+          "file": "data/SPY_GEXOI/2026-07-05.json"
+        }
+      ]
+    },
     {
       "slug": "SPY_GEXOI_700_800",
       "symbol": "SPY",
@@ -10,6 +46,18 @@
           "date": "2026-07-04",
           "frames": 43,
           "file": "data/SPY_GEXOI_700_800/2026-07-04.json"
+        }
+      ]
+    },
+    {
+      "slug": "TSLA_GEXOI",
+      "symbol": "TSLA",
+      "title": "TSLA \u2014 GEX OI",
+      "dates": [
+        {
+          "date": "2026-07-05",
+          "frames": 2,
+          "file": "data/TSLA_GEXOI/2026-07-05.json"
         }
       ]
     }
