@@ -23,7 +23,10 @@
       <label class="range-end">to
         <input type="date" id="datePickEnd" />
       </label>
-      <button id="analyzeBtn" class="analyze-btn" title="Analyze the selected date range with the squeeze framework">🧠 Analyze</button>
+      <div class="btn-row">
+        <button id="analyzeBtn" class="analyze-btn" title="Analyze the selected date range with the squeeze framework">🧠 Analyze</button>
+        <button id="evolveBtn" class="analyze-btn analyze-btn-exp" title="EXPERIMENTAL — session-evolution analytics (untested, pending live-data validation)">📈 Evolution</button>
+      </div>
     </div>
     <div class="topmeta">
       <div class="meta-block">
@@ -34,6 +37,11 @@
         <span class="meta-label">SNAPSHOT (ET)</span>
         <span id="snapET" class="meta-val">—</span>
         <span class="meta-sub"><span id="clkCT">—</span> CT · <span id="clkPT">—</span> PT</span>
+      </div>
+      <div class="meta-block gex0-block" id="gex0Block" hidden title="GEX0 proxy — experimental approximation of the net-GEX zero level over the visible board (not a true gamma flip)">
+        <span class="meta-label">Γ GEX0 <span class="beta-tag">beta</span></span>
+        <span id="gex0Val" class="meta-val gex0">—</span>
+        <span class="meta-sub" id="gex0Dist">—</span>
       </div>
     </div>
   </header>
@@ -98,6 +106,7 @@
     </div>
   </div>
 </div>
+<script src="scoring.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

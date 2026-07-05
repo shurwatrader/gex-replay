@@ -76,6 +76,13 @@ input[type="date"]:focus { outline: 1px solid var(--accent); }
 }
 .analyze-btn:hover { filter: brightness(1.1); }
 .analyze-btn:active { transform: translateY(1px); }
+/* experimental / untested — muted purple so it reads as "beta", not primary */
+.analyze-btn-exp {
+  background: linear-gradient(180deg, #6d4bd0, #573bb0);
+  border-color: #7d5be0; margin-left: 6px;
+}
+/* wrapper is transparent to desktop layout; becomes a flex row on mobile */
+.btn-row { display: contents; }
 
 .analysis-modal {
   position: fixed; inset: 0; z-index: 50; display: flex;
@@ -115,7 +122,8 @@ input[type="date"]:focus { outline: 1px solid var(--accent); }
   font-size: 10px; color: var(--text-faint); text-align: center;
 }
 @media (max-width: 600px) {
-  .analyze-btn { width: 100%; margin-left: 0; }
+  .btn-row { display: flex; gap: 6px; }
+  .btn-row .analyze-btn { flex: 1; width: auto; margin-left: 0; }
   .analysis-modal { padding: 10px; }
 }
 
@@ -126,6 +134,14 @@ input[type="date"]:focus { outline: 1px solid var(--accent); }
 .meta-val { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
 .meta-val.td { color: var(--accent); }
 .meta-sub { font-size: 10px; color: var(--text-dim); font-variant-numeric: tabular-nums; margin-top: 1px; }
+/* GEX0 proxy header chip (experimental) — purple accent to match the badge/button */
+.gex0-block[hidden] { display: none; }
+.gex0-block .meta-label { color: #9a86e0; }
+.gex0-block .meta-val.gex0 { color: #c3b2f7; }
+.beta-tag {
+  font-size: 8px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: #efe9ff; background: #6d4bd0; border-radius: 4px; padding: 0 3px; margin-left: 2px;
+}
 
 /* ---------- grid ---------- */
 .grid-wrap { flex: 1 1 auto; min-height: 0; position: relative; }
@@ -221,6 +237,13 @@ input[type="date"]:focus { outline: 1px solid var(--accent); }
 .grid td.wall-col .wall[hidden] { display: none; }
 .grid td.wall-col .wall.call { background: #0f9d58; color: #eafff3; }
 .grid td.wall-col .wall.put { background: #d32f4b; color: #fff; }
+/* GEX0 proxy badge (experimental) — purple Γ pill, shares the gutter with walls */
+.grid td.wall-col .gex0-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; height: 15px; min-width: 15px; padding: 0 4px;
+  margin-left: 3px; border-radius: 7px; background: #6d4bd0; color: #efe9ff;
+}
+.grid td.wall-col .gex0-badge[hidden] { display: none; }
 
 /* wall rows — dashed line across the data: below the call wall (resistance),
    above the put wall (support) */

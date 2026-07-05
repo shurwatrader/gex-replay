@@ -15,10 +15,14 @@ Hosted on GitHub Pages — no build tooling, just static files (`index.html`,
   anchored to each frame's own min/max.
 - **Movers** — the biggest changes vs the previous frame, ringed and labeled with
   a green ▲ / red ▼ delta chip.
-- **Walls** — derived Call/Put wall rows, badged in the gutter (CW/PW on mobile)
-  with a dashed line (below the call wall, above the put wall).
+- **Walls** — derived Call/Put wall rows, badged **CW / PW** in the gutter (full
+  name on hover) with a dashed line (below the call wall, above the put wall).
 - **King stars** — green ★ for the GEX-OI king cell, red ★ for the Vol king.
 - **Spot** — a cyan chip marks the strike nearest the underlying price.
+- **GEX0 (Γ · beta)** — a purple **Γ** badge marks the strike nearest the net-GEX
+  zero level across all expiries; the exact (fractional) value + distance-to-price
+  shows in the header chip. It's an *approximation over the visible board — not a
+  true gamma flip* — and only appears when there's a clean crossing.
 - **Trading Day + Snapshot (ET)** shown together, so overnight data is
   unambiguous (Trading Day 7/6 · Snapshot 7/5 8:00 PM ET).
 
@@ -33,6 +37,50 @@ Hosted on GitHub Pages — no build tooling, just static files (`index.html`,
 
 Desktop uses fixed-size cells (no judder as values change); mobile lets columns
 size to content and scroll so nothing overlaps.
+
+## AI analysis — the two buttons
+
+Both buttons send a **code-computed structural summary** of the selected window
+(never raw frames) to a Cloudflare Worker, which prepends a rubric, calls **Google
+Gemini `gemini-2.5-flash`**, and returns a markdown read. All scoring math lives in
+`scoring.js`, shared verbatim between the app and the offline backtest so what ships
+is what's validated.
+
+- **🧠 Analyze (squeeze — stable).** Ranks negative-GEX nodes as squeeze
+  candidates using *relative*, session-normalized strength (magnitude vs the
+  session's deepest node, trajectory, acceleration, window-relative freshness,
+  positive→negative flips, %-OTM). Returns a bull / bear / conviction read. Nothing
+  uses absolute dollar thresholds, so it generalizes across tickers.
+- **📈 Evolution (session migration — experimental / unvalidated).** A fully
+  separate path (`buildEvolution`, never touches the squeeze scorer). Tracks how
+  dealer structure *migrated* across the session — wall/gamma-center/GEX0 direction,
+  velocity, acceleration — plus a documented `migrationScore` (0–1) and the GEX0
+  proxy. **Marked untested in the UI**; pending validation against live intraday
+  data. See [`PHASE2_PLAN.md`](PHASE2_PLAN.md) for the methodology.
+
+Setup (API key, secrets, one-time URL/token) is in
+[`worker/README.md`](worker/README.md). Changing a rubric or the model requires a
+`wrangler deploy` — the Worker is deployed separately from the static site.
+
+## Validation — the backtest
+
+`scoring.js` is exercised headless by a Node harness — no browser, no network:
+
+```bash
+node scripts/backtest.js                       # runs against data/manifest.json
+node scripts/backtest.js data/<slug>/<date>.json   # or a specific bundle
+```
+
+It (1) independently re-derives the key fields from raw JSON and asserts the module
+agrees (non-circular), (2) checks scale-robustness (relative floor vs the old
+absolute one), (3) shows old-vs-new ranking, and (4) exercises every dynamic signal
+— squeeze *and* evolution — on injected synthetic patterns, since the frozen sample
+data can't. A run prints `RESULT: N checks passed`.
+
+## Series / tickers
+
+The **Series** dropdown selects which ticker/board to replay (SPY today; more being
+added). Each series is a folder under `data/<slug>/` indexed by `data/manifest.json`.
 
 ## Where the data comes from
 

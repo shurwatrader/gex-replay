@@ -13,6 +13,7 @@
     datePickEnd: $("datePickEnd"),
     tradingDay: $("tradingDay"), snapET: $("snapET"),
     clkCT: $("clkCT"), clkPT: $("clkPT"),
+    gex0Block: $("gex0Block"), gex0Val: $("gex0Val"), gex0Dist: $("gex0Dist"),
     grid: $("grid"),
     gridScroll: $("gridScroll"),
     empty: $("empty"),
@@ -28,6 +29,7 @@
     stepSelect: $("stepSelect"),
     moversToggle: $("moversToggle"),
     analyzeBtn: $("analyzeBtn"),
+    evolveBtn: $("evolveBtn"),
     analysisModal: $("analysisModal"),
     analysisBody: $("analysisBody"),
     analysisClose: $("analysisClose"),
@@ -49,6 +51,7 @@
     rowEls: [],
     priceRowEl: null,
     callWall: null, putWall: null,   // row indices of the wall rows
+    gex0Row: null, strikeStep: 1,    // GEX0 proxy marker row + detected grid spacing
     posMax: 1, negMax: 1,            // color scale anchors, per frame
   };
 
@@ -175,7 +178,8 @@
 
   function selectSeries(i) {
     state.series = state.manifest.series[i];
-    els.title.textContent = state.series.title;
+    // Brand stays "GEX Replay"; the ticker/series is chosen from the dropdown.
+    els.title.textContent = "GEX Replay";
     const dates = (state.series.dates || []).slice().sort((a, b) => a.date.localeCompare(b.date));
     state.series.dates = dates;
     if (!dates.length) { showEmpty("This series has no dates."); return; }
@@ -238,6 +242,7 @@
     });
     state.expiries = [...expirySet].sort((a, b) => expiryDate(a) - expiryDate(b));
     state.strikes = [...strikeSet].sort((a, b) => b - a);
+    state.strikeStep = GEXScoring.detectStep(state.strikes);
 
     const thead = document.createElement("thead");
     const htr = document.createElement("tr");
@@ -279,8 +284,12 @@
       const wallPill = document.createElement("span");
       wallPill.className = "wall"; wallPill.hidden = true;
       wallTd.appendChild(wallPill);
+      // GEX0 proxy marker (experimental) — shares the gutter with the wall badge
+      const gex0Pill = document.createElement("span");
+      gex0Pill.className = "gex0-badge"; gex0Pill.hidden = true; gex0Pill.textContent = "Γ";
+      wallTd.appendChild(gex0Pill);
       tr.appendChild(wallTd);
-      state.wallColEls.push({ td: wallTd, pill: wallPill });
+      state.wallColEls.push({ td: wallTd, pill: wallPill, gex0: gex0Pill });
 
       const rowCells = [];
       state.expiries.forEach(() => {
@@ -429,6 +438,7 @@
 
     markPriceRow(frame);
     markWalls(rowSum);
+    markGex0(frame, rowSum);
     updateClocks(frame.capturedAt, frame.tradingDay);
     els.scrubber.value = String(idx);
     els.frameLabel.textContent = `${idx + 1} / ${frames.length}`;
@@ -448,6 +458,36 @@
     if (bestR < 0) return;
     state.rowEls[bestR].classList.add("price-row");
     state.priceRowEl = state.rowEls[bestR];
+  }
+
+  // GEX0 proxy (EXPERIMENTAL) — the strike where net GEX flips sign across all
+  // expiries, computed by scoring.js from the same rowSum the walls use. Marks
+  // the nearest strike row with a Γ badge and shows the exact (fractional) level
+  // + distance-to-price in the header chip. Renders nothing when the proxy is
+  // null (no clean crossing). NOT a true gamma flip — see scoring.js.
+  function markGex0(frame, rowSum) {
+    if (state.gex0Row != null && state.wallColEls[state.gex0Row]) state.wallColEls[state.gex0Row].gex0.hidden = true;
+    state.gex0Row = null;
+    els.gex0Block.hidden = true;
+    if (!frame) return;
+    const strikeNet = [...rowSum].map(([strike, net]) => ({ strike, net }));
+    const spot = frame.price != null ? Number(frame.price) : null;
+    const proxy = GEXScoring.gexZeroProxy(strikeNet, spot, state.strikeStep);
+    if (proxy == null) return;
+    els.gex0Val.textContent = proxy.toFixed(2);
+    if (spot != null) {
+      const d = Math.round((spot - proxy) * 100) / 100;
+      els.gex0Dist.textContent = (d >= 0 ? "+" : "") + d + "Δ vs price";
+    } else els.gex0Dist.textContent = "—";
+    els.gex0Block.hidden = false;
+    let best = -1, bestD = Infinity;
+    state.strikes.forEach((s, r) => { const d = Math.abs(s - proxy); if (d < bestD) { bestD = d; best = r; } });
+    if (best >= 0) {
+      const g = state.wallColEls[best];
+      g.gex0.hidden = false;
+      g.gex0.title = "GEX0 proxy " + proxy.toFixed(2) + " (experimental — not a true gamma flip)";
+      state.gex0Row = best;
+    }
   }
 
   // Call wall = strike with the largest positive total GEX across expiries;
@@ -475,8 +515,9 @@
       state.rowEls[r].classList.add(kind + "-wall");
       const g = state.wallColEls[r];
       g.pill.hidden = false;
-      g.pill.textContent = label;
-      g.pill.dataset.abbr = abbr;  // shown instead of the label on mobile
+      g.pill.textContent = abbr;    // compact CW/PW on desktop too
+      g.pill.title = label;         // full "Call Wall" / "Put Wall" on hover
+      g.pill.dataset.abbr = abbr;   // used by the mobile ::after fallback
       g.pill.className = "wall " + kind;
       if (kind === "call") state.callWall = r; else state.putWall = r;
     };
@@ -541,57 +582,11 @@
     const frames = state.frames;
     if (!frames || !frames.length) return null;
     const first = frames[0], last = frames[frames.length - 1];
-    const spotEnd = last.price != null ? Number(last.price) : null;
-    const spotStart = first.price != null ? Number(first.price) : null;
-    const spot = spotEnd != null ? spotEnd : spotStart;
 
-    let priceLow = Infinity, priceHigh = -Infinity;
-    frames.forEach((f) => { if (f.price != null) { const p = Number(f.price); if (p < priceLow) priceLow = p; if (p > priceHigh) priceHigh = p; } });
-    if (!isFinite(priceLow)) { priceLow = null; priceHigh = null; }
-
-    // GEX time series per (strike|expiry)
-    const series = new Map();
-    frames.forEach((f) => {
-      const exps = f.expiries || [];
-      (f.rows || []).forEach((row) => {
-        (row.values || []).forEach((cell, c) => {
-          const exp = exps[c]; if (exp == null) return;
-          const key = row.strike + "|" + exp;
-          let s = series.get(key);
-          if (!s) { s = { strike: row.strike, exp, vals: [] }; series.set(key, s); }
-          s.vals.push({ i: s.vals.length, gex: parseCellValue(cell.text), t: f.capturedAt });
-        });
-      });
-    });
-
-    const NEG = -400000;             // significance floor for a "node"
-    const halfway = frames.length * 0.5;
-    const cands = [];
-    series.forEach((s) => {
-      const cur = s.vals[s.vals.length - 1].gex;
-      if (cur >= NEG) return;        // only meaningfully-negative current nodes
-      const start = s.vals[0].gex;
-      let minGex = Infinity;
-      s.vals.forEach((v) => { if (v.gex < minGex) minGex = v.gex; });
-      let crossed = null;
-      for (const v of s.vals) { if (v.gex <= -1e6) { crossed = v.t; break; } }
-      let firstSigIdx = null, freshT = null;
-      for (const v of s.vals) { if (v.gex < NEG) { firstSigIdx = v.i; freshT = v.t; break; } }
-      const fresh = firstSigIdx != null && firstSigIdx > halfway;
-      const aboveSpot = spot != null ? s.strike > spot : null;
-      const otmPct = (spot != null && spot > 0) ? Math.round((s.strike - spot) / spot * 1000) / 10 : null;
-      const untouched = priceLow != null ? !(s.strike >= priceLow && s.strike <= priceHigh) : null;
-      cands.push({
-        strike: s.strike, expiry: s.exp, aboveSpot, otmPct,
-        gexStart: fmtCompact(start), gexNow: fmtCompact(cur), gexMin: fmtCompact(minGex),
-        crossedMinus1M: crossed ? etHM(crossed) : null,
-        fresh, firstSeenET: fresh ? etHM(freshT) : null, untouched,
-        trajectory: downsample(s.vals, 8).map((v) => `${etHM(v.t)} ${fmtCompact(v.gex)}`),
-        _score: Math.abs(cur) * (aboveSpot ? 2 : 1) * (fresh ? 1.6 : 1) * (untouched ? 1.3 : 1),
-      });
-    });
-    cands.sort((a, b) => b._score - a._score);
-    const nodes = cands.slice(0, 12).map(({ _score, ...n }) => n);
+    // Node scoring lives in scoring.js (shared with the headless backtest) so the
+    // app and the validation harness never drift. It computes relative,
+    // session-normalized strength — see scoring.js for the design rationale.
+    const scored = GEXScoring.buildNodes(frames, { fmtTime: etHM });
 
     return {
       meta: {
@@ -599,40 +594,23 @@
         tradingDays: [...new Set(frames.map((f) => f.tradingDay).filter(Boolean))],
         frames: frames.length,
         windowET: `${etHM(first.capturedAt)} – ${etHM(last.capturedAt)}`,
-        spotStart, spotEnd, priceLow, priceHigh,
+        spotStart: scored.meta.spotStart, spotEnd: scored.meta.spotEnd,
+        priceLow: scored.meta.priceLow, priceHigh: scored.meta.priceHigh,
+        deepestNeg: scored.meta.deepestNeg, nodeFloor: scored.meta.negFloor,
         expiries: state.expiries,
       },
       currentWalls: {
         callWall: state.callWall != null ? state.strikes[state.callWall] : null,
         putWall: state.putWall != null ? state.strikes[state.putWall] : null,
       },
-      nodes,
+      nodes: scored.nodes,
+      recentMovers: scored.movers,
     };
   }
 
   // The squeeze-strategy rubric lives here (not secret) so the SAME prompt works
   // whether we send it to a Worker or copy it to the clipboard for manual paste.
-  const RUBRIC = `You are a GEX (Gamma Exposure) squeeze analyst applying a specific replay-based framework. You are given a PRE-COMPUTED structural summary of an options GEX heatmap replay window (all numbers already calculated in code). Output a concise BULL CASE and BEAR/INVALIDATION CASE for near-term price.
-
-FRAMEWORK — the STRUCTURE is the primary signal; premium/flow is CONFIRMATION ONLY:
-1. Negative-GEX nodes ("purple nodes") are liquidity magnets. A large NEGATIVE-GEX node ABOVE spot means dealers are short gamma and hedging can drive price UP toward it (squeeze / gap-up). This is the core bullish setup.
-2. Lifecycle beats a static value. Favor nodes whose negative GEX is GROWING through the session (read the trajectory). Growth toward the session's most-negative levels is the trigger; magnitude thresholds are relative to the ticker.
-3. "Fresh"/late-day nodes: a large negative node that appears or grows rapidly late in the session, especially well OTM, is high-conviction institutional positioning for a near-term move.
-4. "Untouched": if price has NOT reached/rejected the node this session, the magnet is intact (bullish). If price already touched and rejected it, the setup is weakened/invalidated.
-5. Premium/flow is NOT in this dataset — DO NOT fabricate premium numbers. Treat flow as a manual check the user performs (qualitative "massive disparity", e.g. millions in call premium vs thousands in puts = extra conviction). Always end with a one-line manual-flow-check reminder.
-6. Timing: these setups run on a ~7-day window tied to Friday weekly OpEx.
-
-RULES: Use the provided numbers exactly. Do NOT do your own arithmetic beyond simple comparison. Never invent values. If no node qualifies for a bull setup, say so plainly rather than forcing one.
-
-OUTPUT — Markdown, ~200-350 words:
-## Bull case
-Reference the specific qualifying node(s) by strike + expiry with their numbers (start->now GEX, OTM distance, fresh?, untouched?). Explain the magnet/squeeze logic.
-## Bear / invalidation
-Downside magnets (negative nodes below spot), decaying nodes, touched/rejected nodes, or spot drifting away. State concrete invalidation triggers.
-## Conviction & confirmation
-One line — structural conviction (Low/Medium/High) with the reason — then exactly: "Manual flow check: confirm call vs put premium disparity on your flow scanner near the target node before execution."
-
-This is structural analysis, not financial advice.`;
+  const RUBRIC = GEXScoring.RUBRIC;
 
   function buildFullPrompt(summary) {
     return RUBRIC +
@@ -695,6 +673,51 @@ This is structural analysis, not financial advice.`;
     }
   }
 
+  // ----- Evolution (EXPERIMENTAL) — a fully separate path from onAnalyze above.
+  // It calls GEXScoring.buildEvolution (never buildNodes) and posts mode:"evolution"
+  // so the Worker routes it to the evolution rubric. Marked untested in the output.
+  const EVOLUTION_BANNER =
+    "**⚠️ EXPERIMENTAL — UNTESTED.** Session-evolution analytics are new and have " +
+    "**not** been validated against live intraday data (the only captured session so " +
+    "far is a frozen-price holiday). Numbers may be unstable; treat as exploratory " +
+    "until checked against a real moving session.\n\n---\n\n";
+
+  function buildEvolutionSummary() {
+    const frames = state.frames;
+    if (!frames || !frames.length) return null;
+    const ev = GEXScoring.buildEvolution(frames, { fmtTime: etHM });
+    ev.meta.series = (state.series && state.series.title) || "";
+    ev.meta.tradingDays = [...new Set(frames.map((f) => f.tradingDay).filter(Boolean))];
+    return ev;
+  }
+
+  async function onEvolve() {
+    const summary = buildEvolutionSummary();
+    if (!summary) { openAnalysis(); showAnalysis(EVOLUTION_BANNER + "_No data loaded to analyze._"); return; }
+    let endpoint = localStorage.getItem("gex_analyze_endpoint");
+    let token = localStorage.getItem("gex_analyze_token");
+    if (!endpoint) {
+      endpoint = (prompt("One-time setup — paste your Analyze Worker URL (…workers.dev):", "") || "").trim();
+      if (!endpoint) return;
+      localStorage.setItem("gex_analyze_endpoint", endpoint);
+    }
+    if (!token) {
+      token = (prompt("One-time setup — paste your shared token (SHARED_TOKEN):", "") || "").trim();
+      if (token) localStorage.setItem("gex_analyze_token", token);
+    }
+    els.analysisRange.textContent = summary.meta.tradingDays.join(", ") + " · " + summary.meta.windowET + " · evolution";
+    openAnalysis();
+    showAnalysis(EVOLUTION_BANNER + "Analyzing session evolution across " + summary.meta.frames + " frames…");
+    try {
+      const res = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, mode: "evolution", summary }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showAnalysis(EVOLUTION_BANNER + "**Error " + res.status + ":** " + (data.error || "request failed") + (data.detail ? "\n\n`" + JSON.stringify(data.detail).slice(0, 300) + "`" : "")); return; }
+      showAnalysis(EVOLUTION_BANNER + (data.markdown || "_No output returned._"));
+    } catch (e) {
+      showAnalysis(EVOLUTION_BANNER + "**Request failed:** " + e.message + "\n\nCheck the Worker URL is correct and deployed.");
+    }
+  }
+
   // ---------- wiring ----------
   els.playBtn.onclick = togglePlay;
   els.nextBtn.onclick = () => { stop(); showFrame(state.frameIndex + step()); };
@@ -708,6 +731,7 @@ This is structural analysis, not financial advice.`;
   els.datePick.onchange = loadRange;
   els.datePickEnd.onchange = loadRange;
   els.analyzeBtn.onclick = onAnalyze;
+  els.evolveBtn.onclick = onEvolve;
   els.analysisClose.onclick = closeAnalysis;
   els.analysisModal.onclick = (e) => { if (e.target === els.analysisModal) closeAnalysis(); };
 
