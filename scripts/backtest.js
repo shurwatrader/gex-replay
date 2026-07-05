@@ -62,6 +62,67 @@ function rawSeries(frames) {
   return map;
 }
 
+// per-frame net GEX by strike (summed across expiries) — independent of module
+function frameNet(frame) {
+  return (frame.rows || []).map((r) => {
+    let s = 0;
+    (r.values || []).forEach((c) => { s += rawParse(c.text); });
+    return { strike: r.strike, net: s };
+  });
+}
+function gammaCenterOf(sn) {
+  let n = 0, d = 0;
+  sn.forEach(({ strike, net }) => { const w = Math.abs(net); n += strike * w; d += w; });
+  return d > 0 ? n / d : null;
+}
+function mean(a) { return a.length ? a.reduce((x, y) => x + y, 0) / a.length : null; }
+function pearson(xs, ys) {
+  const pairs = xs.map((x, i) => [x, ys[i]]).filter(([a, b]) => a != null && b != null);
+  if (pairs.length < 3) return null;
+  const mx = mean(pairs.map((p) => p[0])), my = mean(pairs.map((p) => p[1]));
+  let sxy = 0, sxx = 0, syy = 0;
+  pairs.forEach(([a, b]) => { sxy += (a - mx) * (b - my); sxx += (a - mx) ** 2; syy += (b - my) ** 2; });
+  return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : null;
+}
+const fmtc = (v) => (v == null ? "—" : v.toFixed(2));
+
+// SESSION DIAGNOSTICS — the "is it too jumpy / does it track spot?" report.
+// Meaningful only on a moving session; on frozen captures it says so.
+function sessionDiagnostics(frames) {
+  const step = GEX.detectStep(frames.flatMap((f) => (f.rows || []).map((r) => r.strike)));
+  const spot = [], proxy = [], center = [];
+  frames.forEach((f) => {
+    const sn = frameNet(f), s = f.price != null ? Number(f.price) : null;
+    spot.push(s); proxy.push(GEX.gexZeroProxy(sn, s, step)); center.push(gammaCenterOf(sn));
+  });
+  const N = frames.length;
+  const cov = proxy.filter((v) => v != null).length;
+  const jumps = []; let nullFlips = 0;
+  for (let i = 1; i < N; i++) {
+    if ((proxy[i - 1] == null) !== (proxy[i] == null)) nullFlips++;
+    if (proxy[i - 1] != null && proxy[i] != null) jumps.push(Math.abs(proxy[i] - proxy[i - 1]));
+  }
+  const meanJump = mean(jumps), maxJump = jumps.length ? Math.max(...jumps) : null;
+  const sv = spot.filter((v) => v != null);
+  const sRange = sv.length ? Math.max(...sv) - Math.min(...sv) : 0;
+  const sNet = sv.length ? sv[sv.length - 1] - sv[0] : 0;
+  const frozen = sRange === 0 && jumps.every((j) => j === 0);
+
+  console.log("\n[6] SESSION DIAGNOSTICS — jumpiness + spot tracking");
+  console.log(`   spot: ${sv[0]}→${sv[sv.length - 1]}  range=${sRange.toFixed(2)} (${(sRange / step).toFixed(1)} strikes)  net=${sNet.toFixed(2)}`);
+  console.log(`   GEX0 proxy: coverage ${cov}/${N}  mean jump=${meanJump == null ? "—" : (meanJump / step).toFixed(2) + " strikes/frame"}  max=${maxJump == null ? "—" : (maxJump / step).toFixed(2) + " strikes"}  null-flips=${nullFlips}`);
+  console.log(`   tracking: corr(proxy,spot)=${fmtc(pearson(proxy, spot))}  corr(gammaCenter,spot)=${fmtc(pearson(center, spot))}`);
+  if (frozen) {
+    console.log("   ⚠ frozen capture (spot + proxy static) — jumpiness/tracking only mean something on a live moving session.");
+  } else if (meanJump != null) {
+    const jv = meanJump / step;
+    const verdict = jv < 0.5 ? "SMOOTH" : jv < 1.5 ? "MODERATE" : "JUMPY";
+    console.log(`   jumpiness verdict: ${verdict}  (mean ${jv.toFixed(2)} strikes/frame — rule of thumb: <0.5 smooth, >1.5 jumpy)`);
+  }
+  check("diag: proxy coverage in range", cov >= 0 && cov <= N);
+  check("diag: jump stats finite", meanJump === null || !isNaN(meanJump));
+}
+
 let PASS = 0, FAIL = 0;
 function check(name, cond, detail) {
   if (cond) { PASS++; }
@@ -181,6 +242,8 @@ function run(file) {
   check("evolution: migrationScore in [0,1] or null", ds.migrationScore === null || (ds.migrationScore >= 0 && ds.migrationScore <= 1), `${ds.migrationScore}`);
   check("evolution: does not touch squeeze nodes", ev.nodes === undefined);
   check("evolution: frozen session ⇒ score ≈ neutral", ds.migrationScore === null || Math.abs(ds.migrationScore - 0.5) < 0.1, `${ds.migrationScore}`);
+
+  sessionDiagnostics(frames);
 }
 
 // ---------- 4. SYNTHETIC SIGNAL COVERAGE ----------
@@ -284,6 +347,15 @@ function runEvolutionSynthetic() {
   const evNull = GEX.buildEvolution(flat);
   console.log(`   no-crossing frame → proxy=${evNull.dailySummary.openingProxy} (expect null)`);
   check("evo synth: null when no sign change", evNull.dailySummary.openingProxy === null);
+
+  // demonstrate the diagnostics on a MOVING session (frozen real data can't)
+  sessionDiagnostics(frames);
+  check("evo synth: proxy tracks spot (corr > 0.8)", (() => {
+    const step = GEX.detectStep(frames.flatMap((f) => f.rows.map((r) => r.strike)));
+    const sp = frames.map((f) => Number(f.price));
+    const px = frames.map((f) => GEX.gexZeroProxy(frameNet(f), Number(f.price), step));
+    return (pearson(px, sp) || 0) > 0.8;
+  })());
 }
 
 console.log("GEX squeeze scoring — backtest / validation");
