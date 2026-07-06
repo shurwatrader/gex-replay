@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-05T23:54:53.276897+00:00",
+  "generatedAt": "2026-07-06T00:02:57.904146+00:00",
   "series": [
     {
       "slug": "MU_GEXOI",
@@ -8,8 +8,13 @@
       "dates": [
         {
           "date": "2026-07-05",
-          "frames": 14,
+          "frames": 17,
           "file": "data/MU_GEXOI/2026-07-05.json"
+        },
+        {
+          "date": "2026-07-06",
+          "frames": 1,
+          "file": "data/MU_GEXOI/2026-07-06.json"
         }
       ]
     },
@@ -20,8 +25,13 @@
       "dates": [
         {
           "date": "2026-07-05",
-          "frames": 14,
+          "frames": 17,
           "file": "data/SPX_GEXOI/2026-07-05.json"
+        },
+        {
+          "date": "2026-07-06",
+          "frames": 1,
+          "file": "data/SPX_GEXOI/2026-07-06.json"
         }
       ]
     },
@@ -32,8 +42,13 @@
       "dates": [
         {
           "date": "2026-07-05",
-          "frames": 15,
+          "frames": 17,
           "file": "data/SPY_GEXOI/2026-07-05.json"
+        },
+        {
+          "date": "2026-07-06",
+          "frames": 2,
+          "file": "data/SPY_GEXOI/2026-07-06.json"
         }
       ]
     },
@@ -44,8 +59,13 @@
       "dates": [
         {
           "date": "2026-07-05",
-          "frames": 14,
+          "frames": 17,
           "file": "data/TSLA_GEXOI/2026-07-05.json"
+        },
+        {
+          "date": "2026-07-06",
+          "frames": 1,
+          "file": "data/TSLA_GEXOI/2026-07-06.json"
         }
       ]
     }
