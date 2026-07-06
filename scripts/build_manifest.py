@@ -12,6 +12,7 @@ Usage:
     python scripts/build_manifest.py --source "C:/Users/jalee/gex_snapshots"
 """
 import argparse
+import gzip
 import json
 import re
 from datetime import datetime, timezone
@@ -121,9 +122,15 @@ def main():
             # by capturedAt (UTC) to keep the replay chronological.
             frames.sort(key=lambda fr: fr.get("capturedAt") or "")
 
-            bundle_rel = f"data/{slug}/{date}.json"
-            with open(out / bundle_rel, "w", encoding="utf-8") as f:
-                json.dump({"slug": slug, "date": date, "frames": frames}, f)
+            bundle_rel = f"data/{slug}/{date}.json.gz"
+            payload = json.dumps({"slug": slug, "date": date, "frames": frames}).encode("utf-8")
+            with gzip.open(out / bundle_rel, "wb") as f:
+                f.write(payload)
+
+            # Drop any stale uncompressed bundle from before the gzip switch.
+            stale = out / f"data/{slug}/{date}.json"
+            if stale.exists():
+                stale.unlink()
 
             dates.append({"date": date, "frames": len(frames), "file": bundle_rel})
             print(f"  {slug} {date}: {len(frames)} frames")

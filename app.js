@@ -160,6 +160,13 @@
   }
 
   // ---------- data loading ----------
+  async function readBundle(res, path) {
+    if (!path.endsWith(".gz")) return await res.json();
+    const ds = new DecompressionStream("gzip");
+    const text = await new Response(res.body.pipeThrough(ds)).text();
+    return JSON.parse(text);
+  }
+
   async function loadManifest() {
     try {
       const res = await fetch("data/manifest.json", { cache: "no-store" });
@@ -203,7 +210,7 @@
       return;
     }
     const bundles = await Promise.all(inRange.map(async (d) => {
-      try { const r = await fetch(d.file, { cache: "no-store" }); if (!r.ok) throw 0; return await r.json(); }
+      try { const r = await fetch(d.file, { cache: "no-store" }); if (!r.ok) throw 0; return await readBundle(r, d.file); }
       catch { return null; }
     }));
     const frames = [];
