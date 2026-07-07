@@ -21,7 +21,14 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const zlib = require("zlib");
 const GEX = require("../scoring.js");
+
+function readJson(file) {
+  const buf = fs.readFileSync(file);
+  const text = file.endsWith(".gz") ? zlib.gunzipSync(buf).toString("utf8") : buf.toString("utf8");
+  return JSON.parse(text);
+}
 
 const ROOT = path.join(__dirname, "..");
 const argv = process.argv.slice(2);
@@ -161,7 +168,7 @@ function run(file) {
   console.log("SESSION:", rel);
   console.log("═".repeat(72));
 
-  const data = JSON.parse(fs.readFileSync(file, "utf8"));
+  const data = readJson(file);
   const frames = data.frames;
   const spot = Number(frames[frames.length - 1].price);
   console.log(`frames=${frames.length}  spot=${spot}  priceFrozen=${new Set(frames.map((f) => f.price)).size === 1}`);
