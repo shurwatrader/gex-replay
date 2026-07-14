@@ -1,5 +1,15 @@
 # GEX Replay
 
+> **⚠ Deprecated — superseded by
+> [gex-replay-matrix](https://github.com/shurwatrader/gex-replay-matrix).**
+> This project replays numbers scraped off the rendered DOM (lossy display
+> strings, one metric per capture, walls re-derived by guesswork). The matrix
+> edition consumes the real `/matrix/{symbol}` backend payload instead: exact
+> numeric values, all three metrics (GEX OI / GEX Vol / VEX) per frame, and
+> authoritative walls/kings metadata. **atlas-framework no longer reads this
+> repo's format** — it consumes gex-replay-matrix bundles. Kept for reference;
+> no further development planned.
+
 Interactive, frame-by-frame replay of **GEX (gamma-exposure) heatmap snapshots**
 from the Quantum Terminal, rebuilt live in the browser from captured JSON.
 
